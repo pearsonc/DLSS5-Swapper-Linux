@@ -7,6 +7,7 @@ const pe = require('./pe');
 const guards = require('./install-guards');
 const { inspectReShade, isVulkanWrapper } = require('./scan');
 const { safePath } = require('./file-journal');
+const linux = require('../linux');
 
 function problem(code, message) { return Object.assign(new Error(message || code), { code }); }
 function hasFile(dir, name) {
@@ -42,7 +43,7 @@ function targetIssue(gameDir, exePath) {
 // gets that copy loaded in preference to the current one in System32, and the
 // pass then compiles to nothing while everything else reports success.
 function oldShaderCompiler(exeDir, readVersion = pe.getFileVersion) {
-  const file = path.join(exeDir, 'D3DCompiler_47.dll');
+  const file = path.join(exeDir, linux.caseAwareTarget(exeDir, 'D3DCompiler_47.dll'));
   let version;
   try {
     if (!fs.existsSync(file)) return null;

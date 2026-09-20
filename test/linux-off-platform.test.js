@@ -57,7 +57,7 @@ function tree(dir) {
 const normalise = (value, dir) => JSON.parse(JSON.stringify(value)
   .split(dir).join('<game>')
   .replace(/originals\/[a-f0-9-]+/g, 'originals/<uuid>')
-  .replace(/"date":"[^"]+"/g, '"date":"<date>"'));
+  .replace(/(\\?")date(\\?"):\s*(\\?")[^"\\]+(\\?")/g, '$1date$2:$3<date>$4'));
 
 const hooked = {
   guards: require('../src/core/install-guards'),
@@ -157,7 +157,7 @@ test('copyTracked, writeTracked and trackBeforeWrite off Linux leave what upstre
   const a = await run(upstream.apply, 'upstream-apply');
   const b = await run(hooked.apply, 'hooked-apply');
   assert.deepEqual(b, a);
-  assert.deepEqual(a.modes, ['666', '666', '666', '666'], 'upstream sets 0o666 on every written file');
+  assert.deepEqual(a.modes, ['666', '666', '666', '664'], 'upstream sets 0o666 on what existed and leaves a fresh write at the umask');
   assert.equal(a.manifest.replaced.length, 2);
   assert.equal(a.manifest.added.length, 3);
 });
@@ -315,7 +315,7 @@ test('the install handler off Linux returns and emits what upstream did at every
       };
       const { handlers, dialogs } = loadMain(sources[side], userData, { target });
       const events = [];
-      const result = await handlers.get('install')({ sender: { send: e => events.push(e) } }, game, target.path, s.route, s.api);
+      const result = await handlers.get('install')({ sender: { send: (_channel, e) => events.push(e) } }, game, target.path, s.route, s.api);
       return normalise({ result, events, dialogs, ensured }, userData);
     };
     const a = await run('upstream');

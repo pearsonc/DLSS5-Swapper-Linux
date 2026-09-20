@@ -42,6 +42,7 @@ const { HistoryStore, knownFolders, fromManifests } = require('./src/core/histor
 const gameMenu = require('./src/core/game-menu');
 const { CommunityClient, ADMIN_TOKEN_PATTERN } = require('./src/community-client');
 const { AdminVault } = require('./src/admin-vault');
+const linux = require('./src/linux');
 let historyStore;
 const history = () => historyStore || (historyStore = new HistoryStore(path.join(app.getPath('userData'), 'history.jsonl')));
 let communityClient;
@@ -1654,13 +1655,8 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   const protonGame = process.platform === 'linux'
     ? steam().find((game) => path.resolve(game.dir) === path.resolve(dir))
     : null;
-  const proton = contextForSteamGame(protonGame);
-  if (process.platform === 'linux' && !proton) {
-    return { ok: false, code: 'errProtonRequired', message: 'This installer supports Windows games launched through Steam Proton. Launch the game once with Proton, then try again.' };
-  }
-  if (process.platform === 'linux' && api === 'vulkan') {
-    return { ok: false, code: 'errLinuxVulkanUnsupported', message: 'The Vulkan Feeder route needs a host Vulkan layer and is not supported on Linux yet. Select a DirectX renderer in the game.' };
-  }
+  const proton = linux.protonContext(protonGame);
+  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton }); if (refused) return refused;
 
   const send = (e) => event.sender.send('job', e);
   await guards.assertGameClosed(dir, target.path);
@@ -1715,8 +1711,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
     // 0.1.1.5 and crashes on 0.2.0-patch1, and until now the only way back was
     // to keep an old copy of the whole app.
     const wanted = (loadState().optiscalerVersion || {})[path.resolve(dir).toLowerCase()];
-    const release = optiscaler.releaseFor(wanted);
-    try { optiRoot = await optiscaler.ensureOptiScaler(app.getPath('userData'), release.version); }
+    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), release); }
     catch (err) { return { ok: false, code: componentCode(err, 'errOptiDownload'), message: err.message }; }
     send({ code: 'optiVerified', params: { version: release.version } });
   }
@@ -1754,6 +1749,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
       }
     }
   }
+  const compilerRefusal = await linux.compilerCheck(optiRoot); if (compilerRefusal) return compilerRefusal;
 
   if (route === 'feeder') {
     try {
