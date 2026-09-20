@@ -1,0 +1,13 @@
+# This profile allows everything and only exists to give the
+# application a name instead of having the label "unconfined"
+
+abi <abi/5.0>,
+include <tunables/global>
+
+profile dlss5-swapper-electron /home/chperso/20051/project-files/dlss-5-linux-proton-swapper/node_modules/electron/dist/electron flags=(unconfined) {
+  userns,
+  @{exec_path} mr,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/dlss5-swapper-electron>
+}

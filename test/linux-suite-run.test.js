@@ -61,7 +61,8 @@ function tmpRoot(t) {
   return root;
 }
 
-const key = ([file, name]) => `${file} :: ${name}`;
+/** `file :: test` for an Annex E pair here or a `{ file, test }` the runner returns. */
+const key = (x) => (Array.isArray(x) ? `${x[0]} :: ${x[1]}` : `${x.file} :: ${x.test}`);
 
 // [test->proton-install-core~30~2]
 test('a tree failing exactly the six Annex E tests, with every Linux test green, passes', async (t) => {
