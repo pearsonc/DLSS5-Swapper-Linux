@@ -1,0 +1,7 @@
+[
+  { "rel": "Game.exe", "kind": "file", "mode": 420, "size": 62, "mtimeMs": 1789862400000 },
+  { "rel": "data", "kind": "dir", "mode": 493 },
+  { "rel": "data/config.ini", "kind": "file", "mode": 420, "size": 23, "mtimeMs": 1789862401000 },
+  { "rel": "data/sub", "kind": "dir", "mode": 493 },
+  { "rel": "data/sub/level.dat", "kind": "file", "mode": 420, "size": 10, "mtimeMs": 1789862402000 }
+]
