@@ -8,6 +8,7 @@ const core = require('./apply');
 const ini = require('./feeder-config');
 const optiscaler = require('./optiscaler');
 const compatibility = require('./compatibility');
+const linux = require('../linux');
 
 function readManifest(gameDir) {
   const file = path.join(core.backupRoot(gameDir), 'manifest.json');
@@ -127,7 +128,7 @@ async function install(config, log = () => {}) {
       }
     }
     let manifest;
-    if (config.route === 'optiscaler') manifest = await optiscaler.install({ ...config, profile }, log);
+    if (config.route === 'optiscaler') manifest = await linux.installEntry({ ...config, profile, ensuredRoot: config.optiRoot, log });
     else manifest = await core.applySwap(config, log);
     for (const companion of config.route === 'native' ? (config.companions || []) : []) {
       const dest = path.join(path.dirname(config.exePath), path.basename(companion));
