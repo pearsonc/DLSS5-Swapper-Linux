@@ -55,6 +55,9 @@ const ALLOWED_NEW_FILE_PATTERNS = [
   /^linux\//,
   /^test\/fixtures\//,
   /^\.specs\//,
+  // The runbook is an executed document rather than an
+  // Annex D row.
+  /^docs\/runbooks\//,
 ];
 
 const isUpstreamFile = (file) => {
