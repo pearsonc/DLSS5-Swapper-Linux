@@ -1630,7 +1630,10 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   const p = payload();
   if (!p) return { ok: false, ...payloadMissing() };
   const scan = await scanGame(dir);
-  if (!scan.chosen) return { ok: false, message: 'No game executable found' };
+  if (!scan.chosen) {
+    const refused = linux.routeGate({ gameDir: dir, scan, log: (e) => event.sender.send('job', e) }); if (refused) return refused;
+    return { ok: false, message: 'No game executable found' };
+  }
 
   // Honour the sheet's choice, but only if it is one of the candidates we
   // actually found - never patch a path the renderer made up.
@@ -1697,7 +1700,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
     const confirmation = await dialog.showMessageBox(win, {
       type: 'warning', title: 'OptiScaler DLSS-NR',
       message: featureText('optiConfirm'),
-      detail: [gpu ? gpu.map(g => `${g.name} — ${g.driver}`).join('\n') : featureText('errOptiHardware'),
+      detail: [gpu ? gpu.map(g => `${g.name} — ${[g.driver, g.note].filter(Boolean).join(', ')}`).join('\n') : featureText('errOptiHardware'),
         oldCard ? featureText('optiCardOld') : null,
         oldDriver ? featureText('optiDriverOld') : null,
         featureText('optiHint'), featureText('optiBridgeHint'), featureText('backendHint')].filter(Boolean).join('\n\n'),
