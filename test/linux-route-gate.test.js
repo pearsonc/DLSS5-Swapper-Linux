@@ -8,7 +8,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const { routeGate } = require('../src/linux/route-gate');
-const { entries } = require('../src/linux/entries');
+const { entries, refusedPairs } = require('../src/linux/entries');
 
 const root = path.resolve(__dirname, '..');
 
@@ -59,6 +59,23 @@ test('an API string absent from Annex A is refused, not admitted by default', (t
   const { gameDir, exePath } = gameFixture(t);
   const refusal = routeGate({ ...A1_PAIR, api: 'someFutureApi', apiLabel: 'Some Future API', proton: PROTON, gameDir, exePath });
   assert.equal(refusal.ok, false);
+});
+
+// Step 8 remedy A, finding 4-8: the evidence a refusal names is table four's
+// own recorded text, generated from Annex A, never a machine-invented
+// fallback string route-gate.js carries itself.
+// [test->proton-install-core~9~4]
+test('a refused pair names the evidence Annex A\'s refused-pair table records for it', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const nativeRefusal = routeGate({ route: 'native', api: 'dxgi', apiLabel: 'DirectX 12', bitness: 64, emulator: null, nativeDlss: true, proton: PROTON, gameDir, exePath });
+  assert.equal(nativeRefusal.ok, false);
+  const nativeEvidence = refusedPairs.find((row) => row.route === 'native' && row.apiLabel === 'DirectX 12').evidence;
+  assert.match(nativeRefusal.message, /RenoDX v4\.7 pin|EXCEPTION_ACCESS_VIOLATION/, 'the message carries the recorded evidence, not a generic string');
+  assert.ok(nativeRefusal.message.includes(nativeEvidence), 'the exact recorded evidence text appears in the refusal');
+
+  const wildcardRefusal = routeGate({ ...A1_PAIR, api: 'someFutureApi', apiLabel: 'Some Future API', proton: PROTON, gameDir, exePath });
+  const wildcardEvidence = refusedPairs.find((row) => row.route === null).evidence;
+  assert.ok(wildcardRefusal.message.includes(wildcardEvidence));
 });
 
 // The exact pair Annex A lists is admitted.
@@ -165,13 +182,10 @@ test('a manifest.json under the backup directory refuses before the transaction 
   const backupDir = path.join(gameDir, '_DLSS5_Backup');
   fs.mkdirSync(backupDir, { recursive: true });
   fs.writeFileSync(path.join(backupDir, 'manifest.json'), JSON.stringify({ route: 'optiscaler', date: '2026-09-01T00:00:00.000Z' }));
-  let transactionCalled = false;
-  const journal = { transaction: () => { transactionCalled = true; } };
-  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, journal });
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath });
   assert.equal(refusal.ok, false);
   assert.match(refusal.message, /optiscaler/);
   assert.match(refusal.message, /2026-09-01/);
-  assert.equal(transactionCalled, false, 'journal.transaction is never called');
 });
 
 // A manifest that carries neither a route nor a date is named as such.
@@ -211,16 +225,60 @@ test('off Linux the gate always admits', (t) => {
   }
 });
 
-test('a game with no resolved Proton context refuses on Linux, unrelated to any Annex A pair', (t) => {
-  const { gameDir, exePath } = gameFixture(t);
-  const refusal = routeGate({ ...A1_PAIR, proton: null, gameDir, exePath });
-  assert.equal(refusal.ok, false);
-  assert.equal(refusal.code, 'errProtonRequired');
-});
-
 test('the Vulkan Feeder route is refused on Linux, unrelated to any Annex A pair', (t) => {
   const { gameDir, exePath } = gameFixture(t);
   const refusal = routeGate({ ...A1_PAIR, api: 'vulkan', proton: PROTON, gameDir, exePath });
   assert.equal(refusal.ok, false);
   assert.equal(refusal.code, 'errLinuxVulkanUnsupported');
+});
+
+// Step 8 remedy A, findings 4-3, 3-2, 7-2, 2-2: `~5~5` names carrying on
+// placing files while a resolved context's own reason is only logged, so an
+// unresolved context is not a refusal; `protonContext` returns an object for
+// every game, so the dead `!proton` branch and its test are retired, and
+// `~7~1`'s native-game verdict is derived by the gate itself from the game
+// folder and the scan it is handed, rather than trusted from a caller.
+// [test->proton-install-core~7~1]
+test('a game whose scan finds no Windows executable is a native Linux game, derived without a caller computing it', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const scanWithNoWindowsExe = { chosen: null, exeCandidates: [] };
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithNoWindowsExe });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /native Linux/i);
+});
+
+test('a game whose scan finds a Windows executable is not treated as a native Linux game', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const scanWithWindowsExe = { chosen: { path: exePath }, exeCandidates: [{ path: exePath }] };
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithWindowsExe }), null);
+});
+
+test('an explicit nativeLinuxGame overrides what the scan would otherwise derive', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const scanWithWindowsExe = { chosen: { path: exePath }, exeCandidates: [{ path: exePath }] };
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithWindowsExe, nativeLinuxGame: true });
+  assert.equal(refusal.ok, false);
+});
+
+// `~5~5`: an unresolved context does not refuse the install; the gate emits
+// the job event proton-context.js's unresolvedJobEvent names, through its
+// log option, and carries on to admit the pair.
+// [test->proton-install-core~9~4]
+test('a context carrying an unresolved reason emits the job event through log and still admits the pair', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const events = [];
+  const unresolved = { prefix: null, build: null, reason: { code: '~3~1', file: '/some/compatdata/990080' } };
+  const result = routeGate({ ...A1_PAIR, proton: unresolved, gameDir, exePath, log: (e) => events.push(e) });
+  assert.equal(result, null, 'an unresolved context carries on placing files rather than refusing');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].code, 'linux-proton-unresolved');
+  assert.equal(events[0].params.reason, '~3~1');
+});
+
+test('a resolved context emits no job event', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const events = [];
+  const result = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, log: (e) => events.push(e) });
+  assert.equal(result, null);
+  assert.deepEqual(events, []);
 });

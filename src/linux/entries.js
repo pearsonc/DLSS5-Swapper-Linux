@@ -7,11 +7,15 @@
 //
 // Entry A1's fields, the placement table as { member, placedAs, sha256, bytes, source } rows,
 // `placedAs` relative to the executable folder, `source` one of 'archive', 'release' or the
-// URL a file is read from, and the archive members the ensure step never extracts. Read by
-// routeGate, ensureEntry and installEntry, the three Annex D hooks proton-install-core~9~4,
-// ~10~7, ~16~2 and ~33~3 govern. Every entry, and every array and object it carries, is
-// deep-frozen: no in-process code may rewrite a digest, a URL or a byte count before
-// linux.ensureEntry( or linux.installEntry( reads it.
+// URL a file is read from, the archive members the ensure step never extracts, and iniKeys,
+// the eight OptiScaler.ini keys table two names for this entry, as { section, key, value }
+// rows, `value: null` where Annex A leaves it dynamic. refusedPairs is table four, the
+// evidence a refused route and API pair records, a row naming neither as the wildcard for
+// every other pair. Read by routeGate, ensureEntry and installEntry, the three Annex D hooks
+// proton-install-core~9~4, ~10~7, ~16~2 and ~33~3 govern. Every entry, and every array and
+// object it or refusedPairs carries, is deep-frozen: no in-process code may rewrite a digest,
+// a URL, a byte count or a piece of evidence before linux.routeGate(, linux.ensureEntry( or
+// linux.installEntry( reads it.
 
 const deepFreeze = (value) => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -175,7 +179,73 @@ const entries = deepFreeze([
       "nvngx.dll_dlssnr.pdb",
       "setup_linux.sh",
       "setup_windows.bat"
+    ],
+    "iniKeys": [
+      {
+        "section": "DlssNr",
+        "key": "Enabled",
+        "value": "true"
+      },
+      {
+        "section": "DlssNr",
+        "key": "ToggleKey",
+        "value": "0x78"
+      },
+      {
+        "section": "Log",
+        "key": "LogToFile",
+        "value": "true"
+      },
+      {
+        "section": "Log",
+        "key": "LogLevel",
+        "value": "2"
+      },
+      {
+        "section": "Upscalers",
+        "key": "Dx12Upscaler",
+        "value": "dlss"
+      },
+      {
+        "section": "Spoofing",
+        "key": "Dxgi",
+        "value": "false"
+      },
+      {
+        "section": "Plugins",
+        "key": "LoadAsiPlugins",
+        "value": "false"
+      },
+      {
+        "section": "ProcessFilter",
+        "key": "TargetProcessName",
+        "value": null
+      }
     ]
+  }
+]);
+
+const refusedPairs = deepFreeze([
+  {
+    "route": "native",
+    "api": "dxgi",
+    "apiLabel": "DirectX 12",
+    "bitness": 64,
+    "evidence": "Spike, route 1 result, 2026-09-19: five of seven launches closed within seconds of feature creation, four logs carrying `EXCEPTION_ACCESS_VIOLATION` inside vkd3d-proton's `d3d12core.dll` reached from `dxgi.dll` and dxvk-nvapi's `nvapi64.dll`; the two surviving launches drew a black scene with the interface over it"
+  },
+  {
+    "route": "optiscaler",
+    "api": "dxgi",
+    "apiLabel": "DirectX 11",
+    "bitness": 64,
+    "evidence": "No evidence gathered on Thor; the spike launched DirectX 12 only"
+  },
+  {
+    "route": null,
+    "api": null,
+    "apiLabel": null,
+    "bitness": null,
+    "evidence": "No evidence gathered on Thor"
   }
 ]);
 
@@ -189,4 +259,4 @@ function archiveMembers(entry) {
   return entry.placement.filter((row) => row.source === 'archive');
 }
 
-module.exports = { entries, entryFor, archiveMembers };
+module.exports = { entries, refusedPairs, entryFor, archiveMembers };
