@@ -1,10 +1,10 @@
 # Can a Windows game on Steam Proton get entry A1 installed and restored on Thor?
 
-Owner: Chris. Environment: Thor, the bare-metal Linux workstation this fork runs on directly (not a compose or cluster environment). Given: a checkout of this repository on `develop` or `feat/proton-install-core` at commit `fa5880d` or later, Node and `7z` on `PATH`, and at least one Steam library holding a Windows game already launched once with Proton so its `compatdata/<appid>` prefix exists.
+Owner: Chris. Environment: Thor, the bare-metal Linux workstation this fork runs on directly (not a compose or cluster environment). Given: a checkout of this repository on `develop` or `feat/proton-install-core` at commit `fbc7e71` or later, Node and `7z` on `PATH`, and at least one Steam library holding a Windows game already launched once with Proton so its `compatdata/<appid>` prefix exists.
 
-Written for commit `fa5880da6fbb3da91c56e5140d4aebbc1dea54ae` (`feat/u9-integration`, wave 2 of
+Written for commit `fbc7e71df2373afecc35f7b52ccf38cc647e5d24` (`feat/u9-integration`, wave 2 of
 `proton-install-core`, review remedy batch C): the route gate call at `main.js:1633`, the
-driver-wording render at `main.js:1703`, and everything the earlier `3fd7920` and `23e665e`
+driver-wording render at `main.js:1703`, and everything the earlier `1963e18` and `5fa199c`
 commits on the same branch wired (the route gate's job channel, the ensure step by route, the
 compiler check's release directory, the copy step's entry/manifest/guard/release-directory/
 tracked-copy). A later commit that changes any of these call sites updates this file in the
@@ -23,7 +23,7 @@ Every command below is relative to the fork's checkout, and the profile's inner 
 cd /home/chperso/20051/project-files/dlss-5-linux-proton-swapper && git log -1 --format=%h && pwd
 ```
 
-Expect: a short commit hash (`b8fb332` or a descendant) and `/home/chperso/20051/project-files/dlss-5-linux-proton-swapper`.
+Expect: a short commit hash (`d638aef` or a descendant) and `/home/chperso/20051/project-files/dlss-5-linux-proton-swapper`.
 
 If not: `apparmor_parser` prints `File linux/apparmor/dlss5-swapper-electron not found, skipping...` from any other directory, which is what a run from the home directory printed on 2026-09-21; `cd` into the checkout and start again.
 
