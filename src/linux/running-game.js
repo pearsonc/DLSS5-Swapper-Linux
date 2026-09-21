@@ -3,7 +3,8 @@ const path = require('path');
 
 // install-guards.js's one-line delegate lands here: upstream's PowerShell
 // process list through the injected runner, then the lock probe when the
-// list is unavailable. log and processRoot are the wave-2 check's inputs.
+// list is unavailable. log and processRoot are proton-install-core~12~3 to
+// ~15~2's running-game check's own inputs, on Linux.
 async function assertGameClosed(matchingProcesses, gameDir, exePath, runner, locked, log, processRoot) {
   const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
   let data;

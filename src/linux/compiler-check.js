@@ -2,7 +2,8 @@
 
 // main.js, after the Feeder runtime checks. Upstream made no check here, so
 // the passthrough admits: null, never a refusal. releaseDir is the ensured
-// extraction root and entry the Annex A entry the wave-2 check reads.
+// extraction root, and entry the Annex A entry a future compiler check would
+// read; no approved criterion governs this hook's body yet.
 function compilerCheck(releaseDir, entry) {
   return null;
 }

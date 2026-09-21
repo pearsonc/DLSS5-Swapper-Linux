@@ -173,7 +173,8 @@ test('copyTracked, writeTracked and trackBeforeWrite off Linux leave what upstre
   const a = await run(upstream.apply, 'upstream-apply');
   const b = await run(hooked.apply, 'hooked-apply');
   assert.deepEqual(b, a);
-  assert.deepEqual(a.modes, ['666', '666', '666', '664'], 'upstream sets 0o666 on what existed and leaves a fresh write at the umask');
+  const freshWriteMode = (0o666 & ~process.umask()).toString(8);
+  assert.deepEqual(a.modes, ['666', '666', '666', freshWriteMode], 'upstream sets 0o666 on what existed and leaves a fresh write at the process umask, whatever it is on this host');
   assert.equal(a.manifest.replaced.length, 2);
   assert.equal(a.manifest.added.length, 3);
 });
@@ -241,6 +242,31 @@ test('caseAwareTarget and fileMode off Linux return upstream\'s inline values', 
     assert.equal(hooked.linux.caseAwareTarget(dir, name), name);
   }
   for (const mode of [undefined, 0o600, 0o644, 0o755]) assert.equal(hooked.linux.fileMode(mode), 0o666);
+});
+
+// apply.js:262, the mode read writeTracked hands linux.fileMode(: it moves
+// out of the chmod's own try, so a new file hands fileMode( undefined
+// exactly as copyOver's absent stat does at :146, rather than skipping the
+// call outright. Untagged: no approved criterion reads writeTracked's
+// pre-write mode today, ~20~1 being wave 2's; this proves the wiring
+// report-code-quality.md's MEDIUM finding named, that the site "cannot
+// deliver the contract src/linux/file-mode.js:5-6 documents".
+test('writeTracked off Linux calls fileMode with the pre-write mode, or undefined for a new file', async (t) => {
+  const linuxBarrel = require('../src/linux');
+  const seen = [];
+  const original = linuxBarrel.fileMode;
+  linuxBarrel.fileMode = (mode) => { seen.push(mode); return original(mode); };
+  t.after(() => { linuxBarrel.fileMode = original; });
+  const dir = temp(t, 'write-tracked-mode');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Game.exe'), 'exe');
+  const manifest = hooked.apply.beginManifest(dir, path.join(dir, 'Game.exe'), 'dxgi');
+  await hooked.apply.writeTracked(manifest, dir, path.join(dir, 'fresh.ini'), 'new', { kind: 'config', oldVersion: null });
+  assert.deepEqual(seen, [undefined], 'a new file: no prior mode to read');
+  fs.chmodSync(path.join(dir, 'fresh.ini'), 0o600);
+  await hooked.apply.writeTracked(manifest, dir, path.join(dir, 'fresh.ini'), 'again', { kind: 'config', oldVersion: '1' });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1] & 0o777, 0o600, 'an existing file: its mode before the write');
 });
 
 // backend-manager.js:130, the copy step, through install() on the optiscaler

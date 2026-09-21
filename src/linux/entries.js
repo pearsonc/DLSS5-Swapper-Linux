@@ -6,8 +6,8 @@
 // table as { member, placedAs, sha256, bytes, source } rows, `placedAs`
 // relative to the executable folder, `source` one of 'archive', 'release'
 // or the URL a file is read from, and the archive members the ensure step
-// never extracts. Read by routeGate, ensureEntry and installEntry; wave 2
-// changes nothing here.
+// never extracts. Read by routeGate, ensureEntry and installEntry, the three
+// Annex D hooks proton-install-core~9~4, ~10~7, ~16~2 and ~33~3 govern.
 
 const A1 = {
   id: 'A1',
