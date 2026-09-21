@@ -73,7 +73,8 @@ const upstream = {
   apply: oracle('src/core/apply.js'),
   scan: oracle('src/core/scan.js'),
   compatibility: oracle('src/core/compatibility.js'),
-  backends: oracle('src/core/backend-manager.js')
+  backends: oracle('src/core/backend-manager.js'),
+  proton: oracle('src/core/proton.js')
 };
 
 async function outcome(work) {
@@ -125,6 +126,21 @@ test('gpuInfo off Linux returns what upstream returned for the same runner', asy
   assert.deepEqual(await hooked.guards.gpuInfo(async () => csv), [
     { name: 'NVIDIA GeForce RTX 5090', driver: '616.56' }, { name: 'NVIDIA GeForce RTX 4090', driver: '616.92' }]);
   assert.equal(await hooked.guards.gpuInfo(async () => { throw new Error('ENOENT'); }), null);
+});
+
+// main.js:1658, the Proton context, through the injected contextForSteamGame.
+// [test->proton-install-core~31~6]
+test('protonContext takes contextForSteamGame injected as its first argument and returns what it returned', () => {
+  const calls = [];
+  const withPrefix = { id: 990080, steamRoot: '/home/user/.local/share/Steam', protonPrefix: '/home/user/.local/share/Steam/steamapps/compatdata/990080/pfx' };
+  const stub = (game) => { calls.push(game); return { proton: '/stub/proton', prefix: game.protonPrefix, steamRoot: game.steamRoot, appid: game.id }; };
+  const result = hooked.linux.protonContext(stub, withPrefix);
+  assert.deepEqual(calls, [withPrefix], 'the injected function was called with the game, not with itself');
+  assert.deepEqual(result, { proton: '/stub/proton', prefix: withPrefix.protonPrefix, steamRoot: withPrefix.steamRoot, appid: withPrefix.id });
+
+  const withNeither = { id: 1363080 };
+  assert.equal(hooked.linux.protonContext(upstream.proton.contextForSteamGame, withNeither), upstream.proton.contextForSteamGame(withNeither));
+  assert.equal(upstream.proton.contextForSteamGame(withNeither), null, 'a game carrying neither field resolves to null in the oracle itself');
 });
 
 function plantGame(dir) {
@@ -328,4 +344,52 @@ test('the install handler off Linux returns and emits what upstream did at every
       assert.equal(a.events.find(e => e.code === 'optiVerified').params.version, pinned, `scenario ${i} reported it`);
     }
   }
+});
+
+// The require graph from src/linux/ into src/core/ must never close a cycle
+// back through the barrel, or a module reached from src/core/ through the
+// barrel would load before its own exports exist. Only a top-level require
+// (a require(...) call at column 0, never inside a function body) actually
+// runs at module-load time, so only those form the graph a cycle can appear
+// in; a lazy require inside a function is not part of it.
+// [test->proton-install-core~31~6]
+test('no module under src/linux/ requires, even transitively, a src/core/ module that requires the barrel', () => {
+  const topLevelRequires = (file) => {
+    const text = fs.readFileSync(file, 'utf8');
+    const rels = [];
+    for (const line of text.split('\n')) {
+      const m = /^const .* = require\('(\.\.?\/[^']+)'\)/.exec(line);
+      if (m) rels.push(m[1]);
+    }
+    return rels;
+  };
+  const resolveRel = (fromFile, rel) => {
+    const base = path.resolve(path.dirname(fromFile), rel);
+    if (fs.existsSync(base) && fs.statSync(base).isDirectory()) return path.join(base, 'index.js');
+    return base.endsWith('.js') ? base : `${base}.js`;
+  };
+  const linuxDir = path.join(root, 'src', 'linux');
+  const coreDir = path.join(root, 'src', 'core');
+  const barrel = path.join(linuxDir, 'index.js');
+  const violations = [];
+  for (const name of fs.readdirSync(linuxDir)) {
+    const file = path.join(linuxDir, name);
+    if (!file.endsWith('.js')) continue;
+    const seen = new Set();
+    const stack = topLevelRequires(file)
+      .map((rel) => resolveRel(file, rel))
+      .filter((abs) => abs.startsWith(coreDir + path.sep));
+    while (stack.length) {
+      const next = stack.pop();
+      if (seen.has(next)) continue;
+      seen.add(next);
+      if (!fs.existsSync(next)) continue;
+      for (const rel of topLevelRequires(next)) {
+        const abs = resolveRel(next, rel);
+        if (abs === barrel) { violations.push(`${path.relative(root, file)} -> ${path.relative(root, next)} -> the barrel`); continue; }
+        if (abs.startsWith(coreDir + path.sep)) stack.push(abs);
+      }
+    }
+  }
+  assert.deepEqual(violations, []);
 });
