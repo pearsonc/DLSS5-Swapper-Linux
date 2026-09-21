@@ -1,6 +1,6 @@
 # Generated from the specification. Never hand-edit.
 source: proton-install-core-spec.md
-source_sha256: ccd953d99d3b018708a27a3b48ffebcfa78b5ccf946fc70b2a0480c6b5d0317d
+source_sha256: 15972066a87e7e395c7344704ec7d4c324b48a5a1205644289207c2831ec42ca
 criteria:
   - id: "proton-install-core~1~1"
     text: "WHEN the app resolves the Proton context of a Steam game on Linux, the app SHALL take the prefix from `steamapps/compatdata/<appid>/pfx` inside the Steam library that lists the game in `libraryfolders.vdf`. [Method: upstream builds that path under the Steam root at `src/library.js:123`, and all 18 prefixes on Thor, 14 games and four Proton tool app ids, sit in a library the Steam root does not hold, whose `compatdata` holds Steam's own `0` and an empty `1358800`, per the requirements' survey of prefix locations]"
@@ -34,10 +34,10 @@ criteria:
     text: "WHILE a process of the invoking user is hidden as Annex B defines, WHEN the app runs the running-game check, the app SHALL log the process by identifier, judge it by `argv[0]` alone as Annex B's hidden-process table decides, and refuse the guarded operation, naming the identifier and the path it compared, where that table says refuse. [Method: 20 to 23 hidden processes per spike run and the game's own `argv[0]`, recorded in ADR-003; the table's rows in ADR-011, which supersedes it]"
   - id: "proton-install-core~15~2"
     text: "IF the process root cannot be read as Annex B defines, THEN the app SHALL refuse the guarded operation and name the condition it met."
-  - id: "proton-install-core~16~2"
+  - id: "proton-install-core~16~3"
     text: "WHEN the app installs a listed pair on Linux, the app SHALL place Microsoft's `d3dcompiler_47.dll`, taken from the user's copy of upstream's matching Windows release, beside the game's executable at the file version and checksum Annex A records. [Method: requirements D4; Wine's copy in the prefix lacks the `isnan` intrinsic the consumer's shaders call, and the copy the spike placed is the one route 2 drew with]"
-  - id: "proton-install-core~17~1"
-    text: "IF the user's copy of upstream's matching Windows release does not carry a file the entry needs, THEN the app SHALL refuse the install before it writes any file and name the file that is missing."
+  - id: "proton-install-core~17~2"
+    text: "IF the release directory does not carry a file the entry needs, THEN the app SHALL refuse the install before it writes any file and name the file that is missing and the directory it looked in."
   - id: "proton-install-core~18~1"
     text: "IF the game folder already holds files from an earlier install of any route Annex A names, THEN the app SHALL refuse a further install and name the route it found."
   - id: "proton-install-core~32~1"
@@ -74,7 +74,7 @@ criteria:
     text: "The app SHALL gate no install on Linux on the driver version, and SHALL show wording saying it cannot judge a Linux driver version."
   - id: "proton-install-core~27~1"
     text: "IF `nvidia-smi` is absent or exits non-zero on Linux, THEN the app SHALL show the GPU as unknown and carry the install on."
-  - id: "proton-install-core~28~8"
+  - id: "proton-install-core~28~9"
     text: "The app SHALL carry its Linux behaviour in files under `src/linux/`, reached from an upstream file only through a hook Annex D lists, with no other change to an upstream file than the in-place edits Annex D marks."
   - id: "proton-install-core~29~5"
     text: "IF a hook Annex D lists is absent from the upstream file it names, THEN the fork's test suite SHALL fail and name the hook and the file."

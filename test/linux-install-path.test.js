@@ -1,5 +1,5 @@
 'use strict';
-// proton-install-core~28~8, the property the wave-2 code review found
+// proton-install-core~28~9, the property the wave-2 code review found
 // unreached: with process.platform 'linux' and a fixture Steam layout, a
 // fixture entry archive and a fixture Windows release directory, one install
 // through the install handler reaches the route gate with the job channel,
@@ -140,7 +140,7 @@ function stubFetch(t) {
   t.after(() => { global.fetch = original; });
 }
 
-// [test->proton-install-core~28~8]
+// [test->proton-install-core~28~9]
 test('the install handler on Linux reaches the route gate, the ensure step, the compiler check and the copy step, and places what Annex A records', async (t) => {
   stubFetch(t);
   const userData = temp(t, 'main');

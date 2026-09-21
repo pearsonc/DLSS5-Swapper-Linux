@@ -1,5 +1,5 @@
 'use strict';
-// proton-install-core~17~1: the compiler check refuses before any write when
+// proton-install-core~17~2: the compiler check refuses before any write when
 // the user's copy of upstream's matching Windows release does not carry a
 // file the entry needs, naming the file that is missing.
 const test = require('node:test');
@@ -17,7 +17,7 @@ function temp(t) {
   return dir;
 }
 
-// [test->proton-install-core~17~1]
+// [test->proton-install-core~17~2]
 test('a fixture release directory carrying every release file the entry needs admits', (t) => {
   const dir = temp(t);
   const entry = entries[0];
@@ -27,7 +27,7 @@ test('a fixture release directory carrying every release file the entry needs ad
   assert.equal(compilerCheck(dir, entry), null);
 });
 
-// [test->proton-install-core~17~1]
+// [test->proton-install-core~17~2]
 test('a fixture release directory with a named file absent refuses before any write, naming the file', (t) => {
   const dir = temp(t);
   const entry = entries[0];
@@ -43,7 +43,7 @@ test('a fixture release directory with a named file absent refuses before any wr
   assert.deepEqual(fs.readdirSync(dir).sort(), before, 'no file was written by the refusal');
 });
 
-// [test->proton-install-core~17~1]
+// [test->proton-install-core~17~2]
 test('off Linux the check always admits, whatever the release directory holds', (t) => {
   Object.defineProperty(process, 'platform', { value: 'win32' });
   try {
@@ -58,7 +58,7 @@ test('off Linux the check always admits, whatever the release directory holds', 
 // the second parameter exists for tests, and the check defaults to Annex
 // A's own entry when it is not supplied, so production behaviour is not a
 // silent no-op.
-// [test->proton-install-core~17~1]
+// [test->proton-install-core~17~2]
 test('with no entry argument the check defaults to Annex A\'s own entry', (t) => {
   const dir = temp(t);
   const refusal = compilerCheck(dir);

@@ -130,7 +130,7 @@ test('installEntry emits linux-launch-options once, with the entry and the cell,
   assert.deepEqual(launch2[0].params, { entry: 'FIX', cell: 'WINEDLLOVERRIDES="dxgi=n,b"' });
 });
 
-// [test->proton-install-core~16~2]
+// [test->proton-install-core~16~3]
 test('installEntry places d3dcompiler_47.dll from the fixture release directory at its entry-injected version and digest, and refuses before writing when the digest does not match', async (t) => {
   const dir = temp(t, 'compiler');
   const gameDir = path.join(dir, 'game');
@@ -150,7 +150,7 @@ test('installEntry places d3dcompiler_47.dll from the fixture release directory 
   assert.equal(sha256(placed), dll.digest);
   assert.equal(placed.length, dll.bytes);
 
-  // [test->proton-install-core~16~2]
+  // [test->proton-install-core~16~3]
   const dir2 = temp(t, 'compiler-mismatch');
   const gameDir2 = path.join(dir2, 'game');
   fs.mkdirSync(gameDir2, { recursive: true });

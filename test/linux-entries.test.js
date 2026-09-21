@@ -35,7 +35,7 @@ test('the generator re-emits src/linux/entries.js byte-identically from the spec
   assert.equal(regenerated, committed);
 });
 
-// [test->proton-install-core~28~8]
+// [test->proton-install-core~28~9]
 test('entries.js\'s source_sha256 equals the generated criteria file\'s, so a spec change fails this until the module is regenerated', () => {
   const entriesText = fs.readFileSync(path.join(root, 'src/linux/entries.js'), 'utf8');
   const entriesSha = /source_sha256: ([0-9a-f]{64})/.exec(entriesText)[1];
@@ -65,7 +65,7 @@ test('the generator emits Annex A\'s refused-pair table, each row carrying the e
 // Step 8 remedy A, finding 5-4: the eight OptiScaler.ini keys the entry
 // writes after extraction travel as entry.iniKeys, so u3's copy step does
 // not re-derive them from prose.
-// [test->proton-install-core~16~2]
+// [test->proton-install-core~16~3]
 test('the generator emits the eight OptiScaler.ini keys Annex A names as entry.iniKeys', () => {
   const entry = entries.entries[0];
   assert.ok(Array.isArray(entry.iniKeys));

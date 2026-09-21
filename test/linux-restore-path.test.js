@@ -1,5 +1,5 @@
 'use strict';
-// proton-install-core~28~8, the restore half of the wave-2 property: one
+// proton-install-core~28~9, the restore half of the wave-2 property: one
 // restore through apply.js:959's real hook, `apply.restore`, with the real
 // `restoreFiles` (never a stub), returns what upstream's restore returns,
 // keeps every backup under `originals/`, and, for a file the fixture
@@ -31,7 +31,7 @@ function temp(t, name) {
 
 function noopGuard() { return async () => {}; }
 
-// [test->proton-install-core~28~8]
+// [test->proton-install-core~28~9]
 test('apply.restore, through the real restoreFiles, keeps every backup under originals/ and reports a changed file and an added one via linux-restore-sweep', async (t) => {
   const dir = temp(t, 'game');
   const gameDir = path.join(dir, 'game');
