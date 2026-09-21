@@ -43,7 +43,7 @@ function makeProcess(root, pid, { status = 'Uid:\t1000\t1000\t1000\t1000\n', exe
 
 async function outcome(work) {
   try { await work(); return { admitted: true }; }
-  catch (error) { return { admitted: false, code: error.code, path: error.path, pid: error.pid }; }
+  catch (error) { return { admitted: false, code: error.code, path: error.path, pid: error.pid, message: error.message }; }
 }
 
 // ---------------------------------------------------------------------------
@@ -377,12 +377,17 @@ test('buildFileIndex stops at its bound and reports how many entries it counted'
 test('a game folder whose walk truncates past the bound refuses the guarded operation', async (t) => {
   const gameDir = tempDir(t, 'swapper-u2-game-');
   const root = tempDir(t, 'swapper-u2-proc-');
+  // A harmless, unrelated readable process, so the process-root-empty
+  // refusal (~15~2) cannot be the one firing: only the truncation refusal
+  // can make this outcome false.
+  makeProcess(root, 8050, { exeTarget: '/usr/bin/bash', mapsLines: ['00400000-00401000 r-xp 00000000 00:00 0'] });
   const original = runningGame.buildFileIndex;
   runningGame.buildFileIndex = () => ({ byExe: new Map(), byMap: new Map(), truncated: true, count: 100000 });
   t.after(() => { runningGame.buildFileIndex = original; });
   const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, null, root));
   assert.equal(result.admitted, false);
   assert.equal(result.code, 'errGameRunning');
+  assert.match(result.message || '', /100000/);
 });
 
 // [test->proton-install-core~12~3]
