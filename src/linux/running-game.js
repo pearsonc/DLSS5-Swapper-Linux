@@ -28,8 +28,8 @@ async function upstreamAssertGameClosed(matchingProcesses, gameDir, exePath, run
   if (matches.length) throw Object.assign(new Error(`Close the game and helper first: ${matches.map(p => p.Name).join(', ')}`), { code: 'errGameRunning' });
 }
 
-function refuse(detail, pid, matchedPath) {
-  return Object.assign(new Error(`Close the game first: ${detail}.`), { code: 'errGameRunning', pid, path: matchedPath });
+function refuse(detail, pid, matchedPath, code = 'errGameRunning') {
+  return Object.assign(new Error(`Close the game first: ${detail}.`), { code, pid, path: matchedPath });
 }
 
 function canonical(target) {
@@ -56,6 +56,7 @@ function majorMinor(dev) {
 // Node's own encoding on both sides; `byMap` is keyed `major:minor:ino`, the
 // decoded form /proc/<pid>/maps prints directly, both listed without
 // following a symbolic link, per Annex B's identity of a file.
+// [Cold start: 100,000, replaced when a game folder over it is met]
 const WALK_BOUND = 100000;
 function buildFileIndex(gameDir, bound = WALK_BOUND) {
   const byExe = new Map();
@@ -120,10 +121,12 @@ function resolvePrefixFromGameFolder(gameDir, deps = {}) {
 
 // Annex B's hidden-process table: the judgement of a hidden process by the
 // shape of its argv[0] alone, per proton-install-core~14~6 and ADR-011.
-function judgeHidden(argv0, canonicalGameDir, resolvePrefix) {
+// `prefix` is already resolved: review remedy C, resolved once per
+// assertGameClosed call rather than once per hidden process this function
+// meets.
+function judgeHidden(argv0, canonicalGameDir, prefix) {
   const drive = /^([A-Za-z]):[\\/](.*)$/.exec(argv0);
   if (drive) {
-    const prefix = resolvePrefix();
     if (!prefix) return { verdict: 'refused', path: argv0 };
     const link = path.join(prefix, 'dosdevices', `${drive[1].toLowerCase()}:`);
     let target;
@@ -163,12 +166,23 @@ async function linuxAssertGameClosed(gameDir, log, processRoot, resolvePrefix) {
   const invokingUid = typeof process.getuid === 'function' ? process.getuid() : null;
   const index = api.buildFileIndex(gameDir);
   if (index.truncated) {
-    // Review remedy 1-4: an unbounded walk is the resource the review named;
-    // past the bound, correctness cannot be guaranteed, so this refuses
-    // rather than silently checking a partial index, as ~34~4 refuses.
-    throw refuse(`the game folder holds more than ${index.count} entries; the walk stopped there`);
+    // Review remedy 1-4, then remedy C: an unbounded walk is the resource
+    // the review named; past the bound, correctness cannot be guaranteed,
+    // so this refuses rather than silently checking a partial index, as
+    // ~34~4 refuses. Its own code, not errGameRunning, since a folder this
+    // size is not evidence of a running game, and the same refusal fires
+    // whichever call site reaches this delegate, install or restore.
+    throw refuse(`the game folder holds more than ${index.count} entries; the walk stopped there`, undefined, undefined, 'errLinuxFolderTooLarge');
   }
   const canonicalGameDir = canonical(gameDir) || path.resolve(gameDir);
+  // Review remedy C: resolved at most once per call, lazily, so a folder
+  // with no hidden process never pays for it at all.
+  let prefix;
+  let prefixResolved = false;
+  const resolvePrefixOnce = () => {
+    if (!prefixResolved) { prefix = resolvePrefix(); prefixResolved = true; }
+    return prefix;
+  };
   let readableEntries = 0;
   for (const pid of pidNames) {
     if (Number(pid) === process.pid) continue;
@@ -194,7 +208,7 @@ async function linuxAssertGameClosed(gameDir, log, processRoot, resolvePrefix) {
     }
     // A hidden process: judged by argv[0] alone, per proton-install-core~14~6.
     const argv0 = readArgv0(path.join(processRoot, pid, 'cmdline'));
-    const { verdict, path: matchedPath } = judgeHidden(argv0, canonicalGameDir, resolvePrefix);
+    const { verdict, path: matchedPath } = judgeHidden(argv0, canonicalGameDir, resolvePrefixOnce());
     if (log) log({ code: 'linux-hidden-process', params: { pid: Number(pid), verdict, path: matchedPath } });
     if (verdict === 'refused') throw refuse(`hidden process ${pid} matches ${matchedPath}`, Number(pid), matchedPath);
   }
