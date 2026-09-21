@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const optiscaler = require('../core/optiscaler');
+const { entryFor } = require('./entries');
 
 // main.js, in place of optiscaler.releaseFor and optiscaler.ensureOptiScaler
 // for upstream's pin (main.js:1718-1719). Off Linux the passthrough is
@@ -100,13 +101,14 @@ async function drawBody(fetcher, url, boundBytes, deadlineMs) {
 // body reaches no name under the cache root (proton-install-core~33~3). A
 // cached body of another checksum is not refused: it is logged with the
 // digest it held and fetched again, and only a verified body replaces it.
-async function ensureCachedFile(fetcher, url, expectedSha256, expectedBytes, destFile, deadlineMs) {
+async function ensureCachedFile(fetcher, url, expectedSha256, expectedBytes, destFile, deadlineMs, log) {
   if (isRegularFile(destFile) && digestFile(destFile) === expectedSha256) return destFile;
   if (fs.existsSync(destFile)) {
     let held = null;
     try { held = digestFile(destFile); } catch { held = null; }
-    // eslint-disable-next-line no-console
-    console.warn(`linux-ensure-entry: cached file ${destFile} held ${held}, expected ${expectedSha256}; fetching again.`);
+    if (typeof log === 'function') {
+      log({ code: 'linux-cache-mismatch', params: { file: destFile, held, expected: expectedSha256 } });
+    }
   }
   const body = await drawBody(fetcher, url, expectedBytes, deadlineMs);
   const received = crypto.createHash('sha256').update(body).digest('hex');
@@ -147,29 +149,45 @@ function walkFiles(root) {
 // The default fetcher used only when main.js injects none: it streams the
 // global `fetch`'s body, so the deadline this step reads is the fork's own
 // 120 seconds, ADR-010's re-decided value, and not upstream's dead code path.
-async function* defaultFetcher(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw refuse('errLinuxFetchFailed', `Fetch of ${url} failed: ${response.status}`, { url, status: response.status });
-  }
-  for await (const chunk of response.body) {
-    yield chunk;
+// An AbortController tied to the same deadline closes the underlying
+// request when it passes, rather than leaving the response body open behind
+// drawBody's own logical timeout.
+async function* defaultFetcher(url, deadlineMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), deadlineMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw refuse('errLinuxFetchFailed', `Fetch of ${url} failed: ${response.status}`, { url, status: response.status });
+    }
+    for await (const chunk of response.body) {
+      yield chunk;
+    }
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-function ensureEntry(cacheRoot, entry, fetcher, deadlineMs) {
+function ensureEntry(cacheRoot, entry, fetcher, deadlineMs, log) {
   if (process.platform !== 'linux') {
     return optiscaler.ensureOptiScaler(cacheRoot, entry.version);
   }
-  return ensureEntryLinux(cacheRoot, entry, fetcher, deadlineMs);
+  return ensureEntryLinux(cacheRoot, entry, fetcher, deadlineMs, log);
 }
 
-async function ensureEntryLinux(cacheRoot, entry, fetcher, deadlineMs) {
-  if (!entry || !Array.isArray(entry.placement)) {
-    throw refuse('errLinuxEntryUnresolved', 'No Annex A entry given: refusing a value that carries no placement table on Linux.', { entry: entry && entry.id });
+async function ensureEntryLinux(cacheRoot, entry, fetcher, deadlineMs, log) {
+  // The call site (main.js:1714) passes the route, per Annex D's amended
+  // Ensure row; a string is resolved to Annex A's entry through
+  // entries.entryFor, and any value carrying no placement table, a route
+  // this table does not list or an entry object alike, is refused.
+  const resolved = typeof entry === 'string' ? entryFor(entry) : entry;
+  if (!resolved || !Array.isArray(resolved.placement)) {
+    const named = typeof entry === 'string' ? entry : (entry && entry.id);
+    throw refuse('errLinuxEntryUnresolved', `No Annex A entry for ${JSON.stringify(named)}: refusing a value that is neither a known route nor an entry carrying a placement table on Linux.`, { entry: named });
   }
+  entry = resolved;
   const bound = Number.isFinite(deadlineMs) ? deadlineMs : DEFAULT_DEADLINE_MS;
-  const draw = fetcher || defaultFetcher;
+  const draw = fetcher || ((url) => defaultFetcher(url, bound));
   const sevenZip = find7z();
   if (!sevenZip) {
     throw refuse('errLinux7zMissing', "Install '7z' to continue: entry A1's archive needs it and it is not on PATH.", { extractor: '7z' });
@@ -179,13 +197,13 @@ async function ensureEntryLinux(cacheRoot, entry, fetcher, deadlineMs) {
   fs.mkdirSync(entryRoot, { recursive: true });
 
   const archiveFile = path.join(entryRoot, entry.archive);
-  await ensureCachedFile(draw, entry.url, entry.sha256, entry.bytes, archiveFile, bound);
+  await ensureCachedFile(draw, entry.url, entry.sha256, entry.bytes, archiveFile, bound, log);
 
   const urlRows = entry.placement.filter((row) => typeof row.source === 'string' && /^https?:\/\//.test(row.source));
   const fetchedUrlFiles = new Map();
   for (const row of urlRows) {
     const dest = path.join(entryRoot, 'fetched', path.basename(row.member));
-    await ensureCachedFile(draw, row.source, row.sha256, row.bytes, dest, bound);
+    await ensureCachedFile(draw, row.source, row.sha256, row.bytes, dest, bound, log);
     fetchedUrlFiles.set(row.member, dest);
   }
 
@@ -200,7 +218,10 @@ async function ensureEntryLinux(cacheRoot, entry, fetcher, deadlineMs) {
 
   const memberNames = archiveRows.map((row) => row.member);
   if (memberNames.length) {
-    spawnSync(sevenZip, ['x', '-spd', '-y', `-o${extractRoot}`, archiveFile, ...memberNames], { stdio: 'ignore' });
+    const result = spawnSync(sevenZip, ['x', '-spd', '-y', `-o${extractRoot}`, archiveFile, ...memberNames], { stdio: 'ignore' });
+    if (result.error || result.status !== 0) {
+      throw refuse('errLinuxExtractorFailed', `${sevenZip} exited ${result.status} extracting ${archiveFile}.`, { extractor: sevenZip, status: result.status });
+    }
   }
 
   for (const row of archiveRows) {
