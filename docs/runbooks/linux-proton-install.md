@@ -15,6 +15,18 @@ read with the runbook that supersedes it.
 
 The one runbook under `docs/runbooks/` today is this file.
 
+## 0. Work from the checkout
+
+Every command below is relative to the fork's checkout, and the profile's inner path names this one checkout's Electron binary, so the working directory is this exact checkout.
+
+```bash
+cd /home/chperso/20051/project-files/dlss-5-linux-proton-swapper && git log -1 --format=%h && pwd
+```
+
+Expect: a short commit hash (`b8fb332` or a descendant) and `/home/chperso/20051/project-files/dlss-5-linux-proton-swapper`.
+
+If not: `apparmor_parser` prints `File linux/apparmor/dlss5-swapper-electron not found, skipping...` from any other directory, which is what a run from the home directory printed on 2026-09-21; `cd` into the checkout and start again.
+
 ## 1. Load the AppArmor profile
 
 ```bash
