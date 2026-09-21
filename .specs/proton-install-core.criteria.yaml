@@ -1,6 +1,6 @@
 # Generated from the specification. Never hand-edit.
 source: proton-install-core-spec.md
-source_sha256: d0f989a119f19c79cb80ae637f87ea1e83107b735679266a5271b2be62620ac0
+source_sha256: 4c4989cd0d2fa869dc333afaab925dbd90bdf583891604c04be38596ad6ee2c4
 criteria:
   - id: "proton-install-core~1~1"
     text: "WHEN the app resolves the Proton context of a Steam game on Linux, the app SHALL take the prefix from `steamapps/compatdata/<appid>/pfx` inside the Steam library that lists the game in `libraryfolders.vdf`. [Method: upstream builds that path under the Steam root at `src/library.js:123`, and all 18 prefixes on Thor, 14 games and four Proton tool app ids, sit in a library the Steam root does not hold, whose `compatdata` holds Steam's own `0` and an empty `1358800`, per the requirements' survey of prefix locations]"
@@ -44,8 +44,8 @@ criteria:
     text: "IF the host has no `7z` on `PATH` when an install of a listed pair starts, THEN the app SHALL refuse the install before it fetches or writes anything and name the extractor it looked for. [Method: requirements D15 and its seventh dependency; the first entry's archive is a `.7z` and upstream's extractor handles zip only]"
   - id: "proton-install-core~33~3"
     text: "WHEN the app installs a pair listed as allowed in Annex A on Linux, the app SHALL fetch each file Annex A sources from a URL that the cache does not hold at its recorded checksum, drawing no more than its byte count plus one chunk under the deadline Annex D records, refusing and naming the bound where either is passed, and SHALL refuse a fetched body of another checksum before any extractor runs or any file is placed, naming the file and leaving no file of that body under the cache root. [Method: requirements D18; the bound, the deadline, the digest of every body and the cache are ADR-010's, and upstream's shape at `runtime-components.js:54-98` is the alternative it prices]"
-  - id: "proton-install-core~19~1"
-    text: "WHEN the app replaces an existing file in a game folder on Linux, the app SHALL give the replacement the mode the original carried. [Method: requirements D7, against upstream's fixed `0o666` at `src/core/apply.js:150` and `:257`, which makes a game-folder DLL writable by every user of the machine]"
+  - id: "proton-install-core~19~2"
+    text: "WHEN the app replaces an existing file in a game folder on Linux, the app SHALL give the replacement the mode the original carried with the owner's write bit set. [Method: requirements D7, against upstream's fixed `0o666` at `src/core/apply.js:150` and `:257`, which makes a game-folder DLL writable by every user of the machine; the owner's write bit because `:257` sets the mode before it writes and a later install or restore overwrites the file, which upstream's `test/readonly-attribute.test.js` drives with a `0444` original]"
   - id: "proton-install-core~20~1"
     text: "WHEN the app adds a new file to a game folder on Linux, the app SHALL create it with mode `0644`. [Method: requirements D7, the mode every file the spike placed carries in its placement appendix]"
   - id: "proton-install-core~21~1"
@@ -78,7 +78,7 @@ criteria:
     text: "The app SHALL carry its Linux behaviour in files under `src/linux/`, reached from an upstream file only through a hook Annex D lists, with no other change to an upstream file than the in-place edits Annex D marks."
   - id: "proton-install-core~29~5"
     text: "IF a hook Annex D lists is absent from the upstream file it names, THEN the fork's test suite SHALL fail and name the hook and the file."
-  - id: "proton-install-core~30~2"
+  - id: "proton-install-core~30~3"
     text: "WHEN the fork's test suite runs on Linux, the fork's test suite SHALL run every test file upstream's `npm test` runs, SHALL fail when the set of failing upstream tests differs from the set Annex E lists, in either direction, naming each test that differs, and SHALL fail when any test in a `test/linux-*.test.js` file fails. [Method: requirements D12; the six tests and the reason each fails are the survey's C2 run of 2026-09-19, re-run 2026-09-20 on Node v20.20.2]"
   - id: "proton-install-core~31~6"
     text: "WHILE `process.platform` is not `linux`, WHEN an upstream file reaches a hook Annex D marks as replacing upstream code, the app SHALL return from that hook what the code it replaced returned at `24bd2ac` for the same arguments. [Method: charter D1, changes nothing a Windows user sees; the oracle is `git show 24bd2ac:<file>` at the replaced lines, reached in a test by the injectable parameters `install-guards.js:39` and `:89` carry and by a `process` whose `platform` reads `win32` in the `vm` harness for `main.js`]"
