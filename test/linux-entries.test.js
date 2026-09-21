@@ -22,14 +22,12 @@ test('entries is deep-frozen: no field, row or array can be rewritten in-process
   assert.throws(() => { entries.entries.push({}); }, TypeError);
 });
 
-test('the generator re-emits src/linux/entries.js byte-identically from the specification at 08e8192', (t) => {
-  const rel = path.join('dlss-5-linux-proton-swapper', 'specs', 'proton-install-core', 'proton-install-core-spec.md');
-  // The specification sits beside the code repository's own root, at any of the
-  // paths a plain checkout (`../brain-db`) or a wave worktree
-  // (`../../../brain-db`, one hop per worktree directory) would place it.
-  const specPath = [1, 2, 3].map((hops) => path.join(root, ...Array(hops).fill('..'), 'brain-db', rel))
-    .find((candidate) => fs.existsSync(candidate));
-  if (!specPath) { t.skip('the specification is not present beside this checkout'); return; }
+test('the generator re-emits src/linux/entries.js byte-identically from the specification it names', (t) => {
+  // The specification is not part of this repository. A run that has it names
+  // its path in PROTON_INSTALL_CORE_SPEC; every other run skips here, loudly,
+  // and the source_sha256 test below stands as the in-repository oracle.
+  const specPath = process.env.PROTON_INSTALL_CORE_SPEC;
+  if (!specPath || !fs.existsSync(specPath)) { t.skip('PROTON_INSTALL_CORE_SPEC names no readable specification'); return; }
   const committed = fs.readFileSync(path.join(root, 'src/linux/entries.js'), 'utf8');
   const regenerated = generator.render(generator.buildEntries(specPath));
   assert.equal(regenerated, committed);
