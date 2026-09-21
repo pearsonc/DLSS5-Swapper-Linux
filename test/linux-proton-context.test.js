@@ -242,6 +242,87 @@ test('config_info line 2 naming a directory that holds its own toolmanifest.vdf,
   assert.equal(result.reason.code, '~2~4');
 });
 
+// [test->proton-install-core~4~3]
+// review remedy 4-12: the tool lookup parses the CompatToolMapping block,
+// not the first "<appid>" occurring anywhere in config.vdf.
+test('the tool lookup reads the appid only inside the CompatToolMapping block, ignoring a same-numbered key elsewhere', () => {
+  const root = tmp(test);
+  const { library, libraryApps } = baseFixture(root);
+  const appid = 88800;
+  fs.writeFileSync(path.join(libraryApps, `appmanifest_${appid}.acf`), '"AppState"\n{\n}\n');
+  const commonDir = path.join(libraryApps, 'common');
+  const buildDir = path.join(commonDir, 'Proton Hotfix');
+  writeToolManifest(buildDir);
+  const inside = path.join(buildDir, 'files', 'share', 'fonts');
+  fs.mkdirSync(inside, { recursive: true });
+  const prefixDir = path.join(libraryApps, 'compatdata', String(appid));
+  fs.mkdirSync(path.join(prefixDir, 'pfx'), { recursive: true });
+  fs.writeFileSync(path.join(prefixDir, 'config_info'), `10-20\n${inside}\n`);
+
+  const toolRoot = path.join(root, 'compatibilitytools.d');
+  // A decoy tool, identifiable and with a directory that differs from the
+  // build, named by the same appid key outside CompatToolMapping (a
+  // plausible other section of a real config.vdf, such as a per-app
+  // record); a naive "first occurrence anywhere" read picks this up.
+  const decoyDir = path.join(toolRoot, 'DecoyTool');
+  fs.mkdirSync(decoyDir, { recursive: true });
+  fs.writeFileSync(path.join(decoyDir, 'compatibilitytool.vdf'),
+    '"compatibilitytools"\n{\n  "compat_tools"\n  {\n    "DecoyTool"\n    {\n      "install_path" "."\n    }\n  }\n}\n');
+  // The real, identifiable tool CompatToolMapping actually names, whose
+  // directory is the creating build itself: no mismatch.
+  const realToolDir = path.join(toolRoot, 'GE-Proton10-20');
+  fs.mkdirSync(realToolDir, { recursive: true });
+  fs.writeFileSync(path.join(realToolDir, 'compatibilitytool.vdf'),
+    `"compatibilitytools"\n{\n  "compat_tools"\n  {\n    "GE-Proton10-20"\n    {\n      "install_path" "${buildDir.replace(/\\/g, '\\\\')}"\n    }\n  }\n}\n`);
+
+  fs.mkdirSync(path.join(root, 'config'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'config', 'config.vdf'),
+    `"InstallConfigStore"\n{\n  "Software"\n  {\n    "Valve"\n    {\n      "Steam"\n      {\n        "apps"\n        {\n          "${appid}"\n          {\n            "name" "DecoyTool"\n          }\n        }\n        "CompatToolMapping"\n        {\n          "${appid}"\n          {\n            "name" "GE-Proton10-20"\n          }\n        }\n      }\n    }\n  }\n}\n`);
+
+  const game = { id: appid, steamRoot: root, dir: path.join(commonDir, 'Some Game') };
+  const result = protonContext(() => null, game, [root]);
+
+  assert.equal(fs.realpathSync(result.build), fs.realpathSync(buildDir));
+  assert.equal(result.reason, null, 'CompatToolMapping names the real tool, whose directory is the build itself');
+});
+
+// [test->proton-install-core~2~4]
+// review remedy 5-7: where both a plain enumerated-directory child and a
+// compatibilitytool.vdf's install_path hold a toolmanifest.vdf and contain
+// line 2's canonical path, the manifest-named directory is the build.
+test('the manifest-named directory is taken as the creating build where a plain enumerated child also holds one', () => {
+  const root = tmp(test);
+  const { library, libraryApps } = baseFixture(root);
+  const appid = 99900;
+  fs.writeFileSync(path.join(libraryApps, `appmanifest_${appid}.acf`), '"AppState"\n{\n}\n');
+
+  const toolRoot = path.join(root, 'compatibilitytools.d');
+  const toolDir = path.join(toolRoot, 'GE-Proton10-20');
+  // toolDir is itself a child of an enumerated directory (the tool root)
+  // and holds its own toolmanifest.vdf, so it independently qualifies as a
+  // creating build.
+  writeToolManifest(toolDir);
+  fs.writeFileSync(path.join(toolDir, 'compatibilitytool.vdf'),
+    '"compatibilitytools"\n{\n  "compat_tools"\n  {\n    "GE-Proton10-20"\n    {\n      "install_path" "files/dist"\n    }\n  }\n}\n');
+  // The manifest-named directory, nested inside toolDir, also holds its own
+  // toolmanifest.vdf and contains line 2's canonical path.
+  const distDir = path.join(toolDir, 'files', 'dist');
+  writeToolManifest(distDir);
+  const insideDist = path.join(distDir, 'files', 'share', 'fonts');
+  fs.mkdirSync(insideDist, { recursive: true });
+
+  const prefixDir = path.join(libraryApps, 'compatdata', String(appid));
+  fs.mkdirSync(path.join(prefixDir, 'pfx'), { recursive: true });
+  fs.writeFileSync(path.join(prefixDir, 'config_info'), `10-20\n${insideDist}\n`);
+
+  const game = { id: appid, steamRoot: root, dir: path.join(libraryApps, 'common', 'Some Game') };
+  const result = protonContext(() => null, game, [root]);
+
+  assert.equal(fs.realpathSync(result.build), fs.realpathSync(distDir));
+  assert.notEqual(fs.realpathSync(result.build), fs.realpathSync(toolDir));
+  assert.equal(result.reason, null);
+});
+
 // [test->proton-install-core~5~5]
 test('the resolver names a folder Steam does not list, and placement is not refused by the resolver', () => {
   const result = protonContext(() => null, null, ['/nonexistent-steam-root']);
