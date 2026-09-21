@@ -215,6 +215,33 @@ test('an identifiable tool whose directory differs from the creating build leave
   assert.equal(result.reason.buildDir, result.build);
 });
 
+// [test->proton-install-core~4~3]
+test('config_info line 2 naming a directory that holds its own toolmanifest.vdf, exactly, not a path inside it, leaves the context unresolved', () => {
+  const root = tmp(test);
+  const { library, libraryApps } = baseFixture(root);
+  const appid = 77700;
+  fs.writeFileSync(path.join(libraryApps, `appmanifest_${appid}.acf`), '"AppState"\n{\n}\n');
+  const commonDir = path.join(libraryApps, 'common');
+  // The game's own folder, which also happens to hold a toolmanifest.vdf:
+  // Steam requires the file of every compatibility tool it runs, but this
+  // directory is the game folder itself, never a creating build (Annex B,
+  // Annex C's Resolver row: "a same-user writer that also plants a
+  // toolmanifest.vdf"). Line 2 names this directory exactly, not a path
+  // inside it, so it is never "the first path inside the creating build".
+  const gameDir = path.join(commonDir, 'Some Game');
+  writeToolManifest(gameDir);
+
+  const prefixDir = path.join(libraryApps, 'compatdata', String(appid));
+  fs.mkdirSync(path.join(prefixDir, 'pfx'), { recursive: true });
+  fs.writeFileSync(path.join(prefixDir, 'config_info'), `10-20\n${gameDir}\n`);
+
+  const game = { id: appid, steamRoot: root, dir: gameDir };
+  const result = protonContext(() => null, game, [root]);
+
+  assert.equal(result.build, null);
+  assert.equal(result.reason.code, '~2~4');
+});
+
 // [test->proton-install-core~5~5]
 test('the resolver names a folder Steam does not list, and placement is not refused by the resolver', () => {
   const result = protonContext(() => null, null, ['/nonexistent-steam-root']);
