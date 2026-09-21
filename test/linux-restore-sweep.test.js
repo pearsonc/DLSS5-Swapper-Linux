@@ -49,7 +49,7 @@ test('the sweep opens no path taken from the record: a phantom entry naming a pa
   fs.chmodSync(path.join(outsideDir, 'f'), 0o600);
   const openSpy = [];
   const originalOpenSync = fs.openSync;
-  fs.openSync = (p, ...rest) => { openSpy.push(p); return originalOpenSync(p, ...rest); };
+  fs.openSync = (p, ...rest) => { openSpy.push(Buffer.isBuffer(p) ? p.toString('utf8') : p); return originalOpenSync(p, ...rest); };
   t.after(() => { fs.openSync = originalOpenSync; fs.rmSync(outsideDir, { recursive: true, force: true }); });
 
   const manifest = baseManifest({
@@ -149,7 +149,8 @@ test('a directory standing at a replaced path keeps the backup and reports incom
 
   assert.equal(fs.statSync(path.join(gameDir, 'dxgi.dll')).isDirectory(), true, 'the directory is left where it is');
   const incomplete = events.find(e => e.code === 'linux-restore-incomplete');
-  assert.deepEqual(incomplete.params.absent, [{ rel: 'dxgi.dll', backup: '_DLSS5_Backup/originals/dxgi.dll' }]);
+  assert.deepEqual(incomplete.params.kept, [{ rel: 'dxgi.dll', backup: '_DLSS5_Backup/originals/dxgi.dll' }]);
+  assert.deepEqual(incomplete.params.absent, []);
 });
 
 // [test->proton-install-core~24~3]
@@ -166,7 +167,8 @@ test('a symbolic link above a placed path inside the executable folder keeps the
 
   assert.equal(fs.lstatSync(path.join(gameDir, 'sub')).isSymbolicLink(), true);
   const incomplete = events.find(e => e.code === 'linux-restore-incomplete');
-  assert.deepEqual(incomplete.params.absent, [{ rel: 'sub/extra.dll', backup: null }]);
+  assert.deepEqual(incomplete.params.kept, [{ rel: 'sub/extra.dll', backup: null }]);
+  assert.deepEqual(incomplete.params.absent, []);
 });
 
 // [test->proton-install-core~35~5]
@@ -297,10 +299,11 @@ test('a recorded file swapped for a link before the open is left with no mode ch
   let swapped = false;
   fs.lstatSync = (p, ...rest) => {
     const stat = originalLstatSync(p, ...rest);
-    if (!swapped && typeof p === 'string' && path.resolve(p) === path.resolve(path.join(gameDir, 'swap.dll')) && stat.isFile()) {
+    const pStr = Buffer.isBuffer(p) ? p.toString('utf8') : p;
+    if (!swapped && typeof pStr === 'string' && path.resolve(pStr) === path.resolve(path.join(gameDir, 'swap.dll')) && stat.isFile()) {
       swapped = true;
-      fs.unlinkSync(p);
-      fs.symlinkSync('/nonexistent-target', p);
+      fs.unlinkSync(pStr);
+      fs.symlinkSync('/nonexistent-target', pStr);
     }
     return stat;
   };
@@ -418,3 +421,4 @@ test('a fixture file named Game.exe:4 restores without incident', async (t) => {
   assert.equal(result, 'restored');
   assert.equal(fs.existsSync(path.join(gameDir, 'Game.exe:4')), true);
 });
+

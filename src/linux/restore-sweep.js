@@ -7,12 +7,16 @@
 // walk finds still of its recorded kind gets its recorded mode back through a
 // descriptor the walk itself opened, per proton-install-core~22~6, ~23~5,
 // ~24~3, ~35~5, ~36~2 and ~38~1, and Annex D's Restore row of
-// proton-install-core-spec.md.
+// proton-install-core-spec.md. Names are read as buffers from readdir
+// through lstat, rename and the log, escaped by byte where they are not
+// valid UTF-8, as entry-install.js's walk escapes them, per the wave-2
+// review's finding that a decoded-then-relstat'd name aborts the restore.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
 const BACKUP_DIR = '_DLSS5_Backup';
+const SEP = Buffer.from('/');
 
 function toRel(gameDir, absPath) {
   return path.relative(gameDir, absPath).split(path.sep).join('/');
@@ -34,9 +38,33 @@ function kindOf(stat) {
   return 'other';
 }
 
-// The rel, against gameDir, of the first symbolic link found at the target
-// path itself or at any directory between it and the executable folder,
-// exclusive of the executable folder itself; null where none stands.
+function escapeBytes(buf) {
+  let out = '';
+  for (const byte of buf) {
+    out += (byte >= 0x20 && byte < 0x7f) ? String.fromCharCode(byte) : '\\x' + byte.toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+function isValidUtf8(buf) {
+  return Buffer.compare(Buffer.from(buf.toString('utf8'), 'utf8'), buf) === 0;
+}
+
+function bufJoin(dirBuf, nameBuf) {
+  return dirBuf.length ? Buffer.concat([dirBuf, SEP, nameBuf]) : nameBuf;
+}
+
+// The last path component of a byte path, cut at the final '/', so a
+// destination for a name that is not valid UTF-8 can still get a parent
+// directory made for it without ever decoding the name.
+function bufDirname(buf) {
+  const idx = buf.lastIndexOf(0x2f);
+  return idx < 0 ? Buffer.alloc(0) : buf.slice(0, idx);
+}
+
+// True where a symbolic link stands at the target path itself or at any
+// directory between it and the executable folder, inclusive of neither the
+// executable folder itself.
 function findBlockingLink(gameDir, exeDirAbs, rel) {
   const target = path.join(gameDir, rel);
   const exeResolved = path.resolve(exeDirAbs);
@@ -61,8 +89,13 @@ function isPlainDir(absPath) {
 // for a file, and requires the descriptor's own path to resolve under the
 // canonical executable folder, before setting the recorded mode through that
 // descriptor. Any failure along the way is reported, not retried and not
-// worked around: the file is left exactly as found.
+// worked around: the file is left exactly as found. A recorded mode outside
+// 0..0o7777, or not an integer, is untrusted structure and is refused the
+// same way rather than handed to fchmod.
 function restoreMode(absPath, walkStat, recordedMode, exeRealPath) {
+  if (!Number.isInteger(recordedMode) || recordedMode < 0 || recordedMode > 0o7777) {
+    return { ok: false, reason: 'invalid-mode' };
+  }
   let fd;
   try {
     fd = fs.openSync(absPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
@@ -93,7 +126,7 @@ function restoreMode(absPath, walkStat, recordedMode, exeRealPath) {
   }
 }
 
-async function moveIntoSwept(gameDir, backupRootAbs, uuid, absSource, relInsideExeDir) {
+async function moveIntoSwept(gameDir, backupRootAbs, uuid, absSourceBuf, relInsideExeDirBuf) {
   if (!isPlainDir(backupRootAbs)) return { ok: false, reason: 'ENOTDIR' };
   const sweptRootAbs = path.join(backupRootAbs, 'swept');
   if (!isPlainDir(sweptRootAbs)) {
@@ -113,15 +146,16 @@ async function moveIntoSwept(gameDir, backupRootAbs, uuid, absSource, relInsideE
     }
   }
   if (!isPlainDir(sweptUuidAbs)) return { ok: false, reason: 'ENOTDIR' };
-  const dest = path.join(sweptUuidAbs, relInsideExeDir);
+  const destBuf = bufJoin(Buffer.from(sweptUuidAbs), relInsideExeDirBuf);
   try {
-    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    await fs.promises.mkdir(bufDirname(destBuf), { recursive: true });
   } catch (error) {
     return { ok: false, reason: error.code || String(error) };
   }
   try {
-    await fs.promises.rename(absSource, dest);
-    return { ok: true, to: path.relative(gameDir, dest).split(path.sep).join('/') };
+    await fs.promises.rename(absSourceBuf, destBuf);
+    const relLeaf = isValidUtf8(relInsideExeDirBuf) ? relInsideExeDirBuf.toString('utf8') : escapeBytes(relInsideExeDirBuf);
+    return { ok: true, to: path.relative(gameDir, sweptUuidAbs).split(path.sep).join('/') + '/' + relLeaf };
   } catch (error) {
     return { ok: false, reason: error.code || String(error) };
   }
@@ -138,78 +172,124 @@ async function restoreSweep(restoreFiles, gameDir, manifest, onLog) {
 
   const originalPath = rel => path.join(backupRootAbs, backupPrefix, rel);
 
-  const withheldReplaced = new Set();
-  const withheldAdded = new Set();
+  const withheldRels = new Set();
   const blockedPaths = new Set();
   const absent = [];
+  const kept = [];
 
-  for (const item of manifest.replaced || []) {
-    const target = path.join(gameDir, item.rel);
-    const stat = lstatOrNull(target);
-    const blockingLink = findBlockingLink(gameDir, exeDirAbs, item.rel);
-    if (blockingLink) blockedPaths.add(blockingLink);
-    if ((stat && (stat.isDirectory() || stat.isSymbolicLink())) || blockingLink) {
-      withheldReplaced.add(item.rel);
-      const backupAbs = originalPath(item.rel);
-      const backupExists = !!lstatOrNull(backupAbs);
-      absent.push({ rel: item.rel, backup: backupExists ? path.relative(gameDir, backupAbs).split(path.sep).join('/') : null });
-    }
-  }
-  for (const rel of manifest.added || []) {
+  // One assessment for every rel the manifest says the install touched,
+  // whatever list it came from: a placed file with a backup to keep, a
+  // placed file, directory or ReShade file with none. Returns 'withhold'
+  // where the walk must not let restoreFiles or the sweep touch the path.
+  function assess(rel, { hasBackup, expectDir }) {
     const target = path.join(gameDir, rel);
     const stat = lstatOrNull(target);
     const blockingLink = findBlockingLink(gameDir, exeDirAbs, rel);
     if (blockingLink) blockedPaths.add(blockingLink);
-    if (!stat) {
+    if (!stat && !hasBackup && !blockingLink) {
       absent.push({ rel, backup: null });
-    } else if (stat.isDirectory() || stat.isSymbolicLink() || blockingLink) {
-      withheldAdded.add(rel);
-      absent.push({ rel, backup: null });
+      return false;
     }
+    // A placed or replaced file is blocked by finding a directory or a link
+    // where a file belongs; an addedDirs entry is blocked the other way
+    // round, by finding anything but the directory the install itself made.
+    const wrongKind = stat && (expectDir ? !stat.isDirectory() : (stat.isDirectory() || stat.isSymbolicLink()));
+    if (wrongKind || blockingLink) {
+      withheldRels.add(rel);
+      if (hasBackup) {
+        const backupAbs = originalPath(rel);
+        const backupExists = !!lstatOrNull(backupAbs);
+        kept.push({ rel, backup: backupExists ? path.relative(gameDir, backupAbs).split(path.sep).join('/') : null });
+      } else {
+        kept.push({ rel, backup: null });
+      }
+      return true;
+    }
+    return false;
   }
 
+  for (const item of manifest.replaced || []) assess(item.rel, { hasBackup: true });
+  for (const rel of manifest.added || []) assess(rel, { hasBackup: false });
+  for (const rel of manifest.addedDirs || []) assess(rel, { hasBackup: false, expectDir: true });
+  for (const rel of (manifest.reshade && manifest.reshade.filesAdded) || []) assess(rel, { hasBackup: false });
+  if (manifest.reshade && manifest.reshade.file) assess(manifest.reshade.file, { hasBackup: false });
+
   const filteredManifest = Object.assign({}, manifest, {
-    replaced: (manifest.replaced || []).filter(item => !withheldReplaced.has(item.rel)),
-    added: (manifest.added || []).filter(rel => !withheldAdded.has(rel))
+    replaced: (manifest.replaced || []).filter(item => !withheldRels.has(item.rel)),
+    added: (manifest.added || []).filter(rel => !withheldRels.has(rel)),
+    addedDirs: (manifest.addedDirs || []).filter(rel => !withheldRels.has(rel))
   });
 
   const result = await restoreFiles(gameDir, filteredManifest, onLog);
+
+  if (absent.length || kept.length) log('linux-restore-incomplete', { absent, kept });
 
   if (!Array.isArray(manifest.linuxBefore)) {
     log('linux-restore-no-record', {});
     return result;
   }
 
-  if (absent.length) log('linux-restore-incomplete', { absent, kept: [] });
-
   const record = manifest.linuxBefore;
   const recordByRel = new Map(record.map(entry => [entry.rel, entry]));
-  const ownedRels = new Set([...(manifest.added || []), ...(manifest.replaced || []).map(item => item.rel)]);
-  const withheld = new Set([...withheldReplaced, ...withheldAdded, ...blockedPaths]);
+  const ownedRels = new Set([
+    ...(manifest.added || []),
+    ...(manifest.replaced || []).map(item => item.rel),
+    ...(manifest.addedDirs || []),
+    ...((manifest.reshade && manifest.reshade.filesAdded) || []),
+    ...(manifest.reshade && manifest.reshade.file ? [manifest.reshade.file] : [])
+  ]);
+  const withheld = new Set([...withheldRels, ...blockedPaths]);
   const visited = new Set();
   const exeRealPath = fs.realpathSync(exeDirAbs);
   const uuid = crypto.randomUUID();
+  const gameRelPrefixBuf = Buffer.from(toRel(gameDir, exeDirAbs), 'utf8');
+  const backupRootAbsBuf = Buffer.from(backupRootAbs, 'utf8');
 
   // Walked and swept together, one directory at a time: an unlisted
   // directory moves whole, per Annex D, so its children are never separately
-  // visited once the move has been attempted.
-  async function sweepDir(dirAbs) {
-    const names = fs.readdirSync(dirAbs, { encoding: 'buffer' })
-      .map(b => b.toString('utf8'))
-      .sort();
-    for (const name of names) {
-      const abs = path.join(dirAbs, name);
-      if (path.resolve(abs) === path.resolve(backupRootAbs)) continue;
-      const stat = fs.lstatSync(abs);
-      const rel = toRel(gameDir, abs);
-      if (withheld.has(rel)) continue;
-      const rec = recordByRel.get(rel);
+  // visited once the move has been attempted. Every name stays a buffer from
+  // readdir to the eventual lstat, rename and log; only a name that decodes
+  // and round-trips as UTF-8 is turned into the string a record entry can
+  // match. A per-entry failure (readdir, lstat, a move) is caught, logged
+  // and skipped rather than left to abort the sweep after restoreFiles has
+  // already run.
+  async function sweepDir(dirAbsBuf, dirRelToGameBuf, dirRelToExeBuf) {
+    let names;
+    try {
+      names = fs.readdirSync(dirAbsBuf, { encoding: 'buffer' }).sort(Buffer.compare);
+    } catch (error) {
+      log('linux-restore-sweep', { rel: dirRelToGameBuf.toString('utf8'), outcome: 'unmatched', reason: error.code || String(error) });
+      return;
+    }
+    for (const nameBuf of names) {
+      const absBuf = bufJoin(dirAbsBuf, nameBuf);
+      if (absBuf.equals(backupRootAbsBuf)) continue;
+      const relToGameBuf = bufJoin(dirRelToGameBuf, nameBuf);
+      const relToExeBuf = bufJoin(dirRelToExeBuf, nameBuf);
+      const valid = isValidUtf8(relToGameBuf);
+      const rel = valid ? relToGameBuf.toString('utf8') : escapeBytes(relToGameBuf);
+
+      let stat;
+      try {
+        stat = fs.lstatSync(absBuf);
+      } catch (error) {
+        log('linux-restore-sweep', { rel, outcome: 'unmatched', reason: error.code || String(error) });
+        continue;
+      }
+
+      if (valid && withheld.has(rel)) continue;
+      // An invalid name can never be a record entry: the record's own walk
+      // (entry-install.js) refuses to write one, so this rel never matches.
+      const rec = valid ? recordByRel.get(rel) : undefined;
 
       if (!rec) {
-        const relInsideExeDir = path.relative(exeDirAbs, abs).split(path.sep).join('/');
-        const outcome = await moveIntoSwept(gameDir, backupRootAbs, uuid, abs, relInsideExeDir);
-        if (outcome.ok) log('linux-restore-sweep', { rel, outcome: 'moved', to: outcome.to });
-        else log('linux-restore-sweep', { rel, outcome: 'move-failed', reason: outcome.reason });
+        try {
+          const outcome = await moveIntoSwept(gameDir, backupRootAbs, uuid, absBuf, relToExeBuf);
+          if (outcome.ok) log('linux-restore-sweep', { rel, outcome: 'moved', to: outcome.to });
+          else log('linux-restore-sweep', { rel, outcome: 'move-failed', reason: outcome.reason });
+        } catch (error) {
+          log('linux-restore-sweep', { rel, outcome: 'move-failed', reason: error.code || String(error) });
+        }
         continue; // moved whole, or left exactly as found; either way not visited further
       }
 
@@ -227,14 +307,18 @@ async function restoreSweep(restoreFiles, gameDir, manifest, onLog) {
         }
       }
 
-      const outcome = restoreMode(abs, stat, rec.mode, exeRealPath);
-      if (!outcome.ok) log('linux-restore-sweep', { rel, outcome: 'unmatched', reason: outcome.reason });
+      try {
+        const outcome = restoreMode(absBuf, stat, rec.mode, exeRealPath);
+        if (!outcome.ok) log('linux-restore-sweep', { rel, outcome: 'unmatched', reason: outcome.reason });
+      } catch (error) {
+        log('linux-restore-sweep', { rel, outcome: 'unmatched', reason: error.code || String(error) });
+      }
 
-      if (stat.isDirectory()) await sweepDir(abs);
+      if (stat.isDirectory()) await sweepDir(absBuf, relToGameBuf, relToExeBuf);
     }
   }
 
-  await sweepDir(exeDirAbs);
+  await sweepDir(Buffer.from(exeDirAbs), gameRelPrefixBuf, Buffer.alloc(0));
 
   for (const entry of record) {
     if (visited.has(entry.rel) || ownedRels.has(entry.rel)) continue;
