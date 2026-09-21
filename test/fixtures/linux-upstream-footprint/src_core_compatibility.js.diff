@@ -1,0 +1,8 @@
+diff --git a/src/core/compatibility.js b/src/core/compatibility.js
+--- a/src/core/compatibility.js
++++ b/src/core/compatibility.js
+@@ -9,0 +10 @@ const { safePath } = require('./file-journal');
++const linux = require('../linux');
+@@ -45 +46 @@ function oldShaderCompiler(exeDir, readVersion = pe.getFileVersion) {
+-  const file = path.join(exeDir, 'D3DCompiler_47.dll');
++  const file = path.join(exeDir, linux.caseAwareTarget(exeDir, 'D3DCompiler_47.dll'));
