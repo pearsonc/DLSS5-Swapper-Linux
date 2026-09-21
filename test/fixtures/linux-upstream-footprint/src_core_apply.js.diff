@@ -14,18 +14,12 @@ diff --git a/src/core/apply.js b/src/core/apply.js
 +  dest = path.join(path.dirname(dest), linux.caseAwareTarget(path.dirname(dest), path.basename(dest)));
 @@ -251,0 +256 @@ async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
 +  dest = path.join(path.dirname(dest), linux.caseAwareTarget(path.dirname(dest), path.basename(dest)));
-@@ -256,2 +261,6 @@ async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
--  // to rewrite it: clear the attribute before, not only after.
+@@ -257 +262 @@ async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
 -  try { await fs.promises.chmod(dest, 0o666); } catch { /* absent is normal */ }
-+  // to rewrite it: clear the attribute before, not only after. The mode read
-+  // sits outside the chmod's own try, as copyOver's does, so a new file hands
-+  // fileMode( undefined exactly as copyOver's absent stat does, rather than
-+  // skipping the call outright.
-+  const before = await fs.promises.stat(dest).then(s => s.mode, () => undefined);
-+  try { await fs.promises.chmod(dest, linux.fileMode(before)); } catch { /* absent is normal */ }
-@@ -346 +355 @@ async function installReShadeAt(options) {
++  try { await fs.promises.chmod(dest, linux.fileMode(await fs.promises.stat(dest).then(s => s.mode, () => undefined))); } catch { /* absent is normal */ }
+@@ -346 +351 @@ async function installReShadeAt(options) {
 -  const hookPath = path.join(exeDir, hook);
 +  const hookPath = path.join(exeDir, linux.caseAwareTarget(exeDir, hook));
-@@ -959 +968 @@ async function restore(gameDir, onLog) {
+@@ -959 +964 @@ async function restore(gameDir, onLog) {
 -  await restoreFiles(gameDir, manifest, onLog);
 +  await linux.restoreSweep(restoreFiles, gameDir, manifest, onLog);

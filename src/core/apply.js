@@ -258,12 +258,8 @@ async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
   await saveActiveManifest(gameDir, manifest);
   await fs.promises.mkdir(path.dirname(dest), { recursive: true });
   // A file an earlier install copied in can be read-only, and Windows refuses
-  // to rewrite it: clear the attribute before, not only after. The mode read
-  // sits outside the chmod's own try, as copyOver's does, so a new file hands
-  // fileMode( undefined exactly as copyOver's absent stat does, rather than
-  // skipping the call outright.
-  const before = await fs.promises.stat(dest).then(s => s.mode, () => undefined);
-  try { await fs.promises.chmod(dest, linux.fileMode(before)); } catch { /* absent is normal */ }
+  // to rewrite it: clear the attribute before, not only after.
+  try { await fs.promises.chmod(dest, linux.fileMode(await fs.promises.stat(dest).then(s => s.mode, () => undefined))); } catch { /* absent is normal */ }
   await fs.promises.writeFile(dest, text, 'utf8');
   return rel;
 }
