@@ -3,7 +3,7 @@
 // Never hand-edit; regenerate with:
 //   node scripts/gen-entries.js <path-to-proton-install-core-spec.md> > src/linux/entries.js
 // source: proton-install-core-spec.md
-// source_sha256: d0f989a119f19c79cb80ae637f87ea1e83107b735679266a5271b2be62620ac0
+// source_sha256: 45b6eed2dae9a93b11fc0aeeea6f0c230c39eb973ece3bd19cac190acb2c5028
 //
 // Entry A1's fields, the placement table as { member, placedAs, sha256, bytes, source } rows,
 // `placedAs` relative to the executable folder, `source` one of 'archive', 'release' or the
