@@ -14,6 +14,7 @@ const { spawnSync } = require('node:child_process');
 
 const runner = require('../scripts/test-linux');
 const RUNNER = path.join(__dirname, '..', 'scripts', 'test-linux.js');
+const REPO_ROOT = path.join(__dirname, '..');
 
 /** Annex E of proton-install-core-spec.md, the six upstream tests that fail on Linux. */
 const ANNEX_E = [
@@ -87,7 +88,7 @@ test('one Annex E test passing fails the run and names it', async (t) => {
   assert.deepEqual(result.missing.map(key), [key(dropped)]);
   assert.deepEqual(result.unexpected, []);
   assert.deepEqual(result.linuxFailures, []);
-  assert.ok(result.lines.some((l) => l.includes('EXPECTED FAILURE PASSED') && l.includes(dropped[1])), result.lines.join('\n'));
+  assert.ok(result.lines.some((l) => l.includes('EXPECTED FAILURE NOT SEEN') && l.includes(dropped[1])), result.lines.join('\n'));
 });
 
 // [test->proton-install-core~30~2]
@@ -121,6 +122,35 @@ test("upstream's own test/linux-proton.test.js is an upstream test, so its failu
   assert.equal(result.ok, false);
   assert.deepEqual(result.unexpected.map(key), [key(added)]);
   assert.deepEqual(result.linuxFailures, []);
+});
+
+// A fixture file whose top level crashes the process, rather than one of its
+// tests failing an assertion: reported as one Linux failure naming the exit.
+// [test->proton-install-core~30~2]
+test('a linux-*.test.js file whose top level exits non-zero is one Linux failure naming the exit', async (t) => {
+  const root = annexETree(tmpRoot(t));
+  fs.writeFileSync(path.join(root, 'test/linux-crashes.test.js'), "'use strict';\nprocess.exit(3);\n");
+  const result = await runner.runSuite({ root });
+  assert.equal(result.ok, false);
+  assert.equal(result.linuxFailures.length, 1, result.lines.join('\n'));
+  assert.equal(result.linuxFailures[0].file, 'test/linux-crashes.test.js');
+  assert.match(result.linuxFailures[0].test, /exit 3/);
+  assert.deepEqual(result.unexpected, []);
+  assert.deepEqual(result.missing, []);
+  assert.ok(result.lines.some((l) => l.includes('LINUX FAILURE') && l.includes('test/linux-crashes.test.js') && l.includes('exit 3')), result.lines.join('\n'));
+});
+
+// [test->proton-install-core~30~2]
+test('the runner\'s test-file set is what package.json\'s test script runs', () => {
+  const pkg = require(path.join(REPO_ROOT, 'package.json'));
+  const m = /(\S+\/\*\.test\.js)/.exec(pkg.scripts.test);
+  assert.ok(m, `package.json's test script names a glob: ${pkg.scripts.test}`);
+  const dir = path.dirname(m[1]);
+  const expected = fs.readdirSync(path.join(REPO_ROOT, dir))
+    .filter((name) => name.endsWith('.test.js') && fs.statSync(path.join(REPO_ROOT, dir, name)).isFile())
+    .sort()
+    .map((name) => `${dir}/${name}`);
+  assert.deepEqual(runner.testFiles(REPO_ROOT), expected);
 });
 
 // [test->proton-install-core~30~2]

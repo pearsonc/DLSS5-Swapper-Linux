@@ -58,12 +58,23 @@ function tapName(rest) {
   return name.trim();
 }
 
-/** Top-level `ok` and `not ok` lines of one file's TAP output. */
+/** Top-level `ok` and `not ok` lines of one file's TAP output, each carrying
+ * the `exitCode` its YAML diagnostic block names, where one is present: the
+ * whole file crashed rather than one of its tests failing an assertion. */
 function parseTap(text) {
   const results = [];
-  for (const line of text.split('\n')) {
-    const m = /^(not )?ok \d+ - (.*)$/.exec(line);
-    if (m) results.push({ test: tapName(m[2]), ok: !m[1] });
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(not )?ok \d+ - (.*)$/.exec(lines[i]);
+    if (!m) continue;
+    const result = { test: tapName(m[2]), ok: !m[1] };
+    if (m[1] && lines[i + 1] === '  ---') {
+      for (let j = i + 1; j < lines.length && lines[j] !== '  ...'; j++) {
+        const e = /^\s*exitCode: (\d+)/.exec(lines[j]);
+        if (e) { result.exitCode = Number(e[1]); break; }
+      }
+    }
+    results.push(result);
   }
   return results;
 }
@@ -89,7 +100,8 @@ function runFile(root, file) {
     child.on('error', reject);
     child.on('close', (code, signal) => {
       const results = parseTap(stdout);
-      const failures = results.filter((r) => !r.ok).map((r) => ({ file, test: r.test }));
+      const failures = results.filter((r) => !r.ok)
+        .map((r) => ({ file, test: r.exitCode !== undefined ? `${r.test} (crashed, exit ${r.exitCode})` : r.test }));
       if ((code !== 0 || signal) && failures.length === 0) {
         failures.push({ file, test: `(the file's process ended with ${signal ? `signal ${signal}` : `exit ${code}`} and no failing test)` });
       }
@@ -135,7 +147,7 @@ async function runSuite({ root = path.join(__dirname, '..') } = {}) {
   for (const [k, e] of expected) {
     if (!seen.has(k)) {
       missing.push(e);
-      lines.push(`EXPECTED FAILURE PASSED: ${k}`);
+      lines.push(`EXPECTED FAILURE NOT SEEN: ${k}`);
     }
   }
   const ok = unexpected.length === 0 && missing.length === 0 && linuxFailures.length === 0;
