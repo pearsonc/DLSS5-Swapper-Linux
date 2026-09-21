@@ -386,8 +386,47 @@ test('a game folder whose walk truncates past the bound refuses the guarded oper
   t.after(() => { runningGame.buildFileIndex = original; });
   const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, null, root));
   assert.equal(result.admitted, false);
-  assert.equal(result.code, 'errGameRunning');
+  // Review remedy C: the bound's own refusal is errLinuxFolderTooLarge, not
+  // errGameRunning, since a folder this size is not evidence of a running
+  // game.
+  assert.equal(result.code, 'errLinuxFolderTooLarge');
   assert.match(result.message || '', /100000/);
+});
+
+// [test->proton-install-core~12~3]
+// Review remedy C: the same refusal fires wherever assertGameClosed is
+// called, install or restore, since both main.js call sites reach this one
+// delegate; two calls over the same truncated folder must agree.
+test('a bounded game folder refuses errLinuxFolderTooLarge the same way on an install-shaped and a restore-shaped call', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8051, { exeTarget: '/usr/bin/bash', mapsLines: ['00400000-00401000 r-xp 00000000 00:00 0'] });
+  const original = runningGame.buildFileIndex;
+  runningGame.buildFileIndex = () => ({ byExe: new Map(), byMap: new Map(), truncated: true, count: 100000 });
+  t.after(() => { runningGame.buildFileIndex = original; });
+  const install = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, null, root));
+  const restore = await outcome(() => assertGameClosed(null, gameDir, null, null, null, null, root));
+  assert.equal(install.code, 'errLinuxFolderTooLarge');
+  assert.equal(restore.code, 'errLinuxFolderTooLarge');
+});
+
+// ---------------------------------------------------------------------------
+// Review remedy C: the prefix is resolved once per assertGameClosed call and
+// passed into judgeHidden, not re-resolved once per hidden process.
+
+// [test->proton-install-core~14~6]
+test('resolvePrefix is called once per assertGameClosed call, however many hidden processes it meets', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8052, { cmdlineArgs: ['nvtop'] });
+  makeProcess(root, 8053, { cmdlineArgs: ['./steamwebhelper'] });
+  makeProcess(root, 8054, { cmdlineArgs: [''] });
+  let calls = 0;
+  const resolvePrefix = () => { calls += 1; return null; };
+  const events = [];
+  await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, (e) => events.push(e), root, resolvePrefix));
+  assert.equal(events.length, 3, 'all three hidden processes were judged');
+  assert.equal(calls, 1, 'resolvePrefix was called once, not once per hidden process');
 });
 
 // [test->proton-install-core~12~3]
