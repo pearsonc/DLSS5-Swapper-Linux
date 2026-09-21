@@ -87,12 +87,18 @@ function sourcePath(row, ensuredRoot, releaseDir) {
 // Security finding 1: before any write, every path component of every
 // placement target under the executable folder is checked by lstat, never
 // followed, so a link planted at an intermediate component or at the
-// placement path itself refuses rather than writing through it.
+// placement path itself refuses rather than writing through it. Review
+// remedy C: the final component is resolved through the barrel's
+// caseAwareTarget first, as placeTracked's own write will resolve it, so a
+// link at `DXGI.dll` refuses a placement of `dxgi.dll` rather than reading
+// past it under a name the write never actually lands on.
 function assertNoLinkComponent(exeDir, placedAs) {
   const parts = String(placedAs).split(/[\\/]+/).filter(Boolean);
   let current = exeDir;
-  for (const part of parts) {
-    current = path.join(current, part);
+  for (let i = 0; i < parts.length; i++) {
+    const isLast = i === parts.length - 1;
+    const name = isLast ? require('../linux').caseAwareTarget(current, parts[i]) : parts[i];
+    current = path.join(current, name);
     let lstat;
     try { lstat = fs.lstatSync(current); }
     catch (error) { if (error.code === 'ENOENT') continue; throw error; }
@@ -104,13 +110,16 @@ function assertNoLinkComponent(exeDir, placedAs) {
 
 // Conformance finding 4-5: a release-sourced file is verified against its
 // placement row's SHA-256 before any write, since it comes from the user's
-// own release rather than the checksum-verified archive extraction.
+// own release rather than the checksum-verified archive extraction. Review
+// remedy C, ~17~2: the refusal names the release directory it looked in.
 function assertReleaseChecksum(row, ensuredRoot, releaseDir) {
   if (row.source !== 'release') return;
   const src = sourcePath(row, ensuredRoot, releaseDir);
   const digest = crypto.createHash('sha256').update(fs.readFileSync(src)).digest('hex');
   if (digest !== row.sha256) {
-    throw fail('errLinuxReleaseChecksum', `A release file's SHA-256 does not match its placement row: ${src}`, { path: src, expected: row.sha256, actual: digest });
+    throw fail('errLinuxReleaseChecksum',
+      `A release file's SHA-256 does not match its placement row: ${row.member}, looked in ${releaseDir}`,
+      { path: src, directory: releaseDir, expected: row.sha256, actual: digest });
   }
 }
 
@@ -181,11 +190,14 @@ async function installEntry(options) {
   manifest.linuxBefore = record;
   emit({ code: 'linux-record-written', params: { entries: record.length, ms } });
 
-  // Annex D's copy-step row: guard defaults to the barrel's assertGameClosed
-  // when the caller hands none. Required lazily so loading this module,
-  // itself one of the barrel's own exports, never reads the barrel's
-  // exports object before it is fully built.
-  const guardFn = typeof guard === 'function' ? guard : require('../linux').assertGameClosed;
+  // Annex D's copy-step row: guard defaults to the barrel's assertGameClosed,
+  // bound to gameDir, exePath and log, when the caller hands none. Required
+  // lazily so loading this module, itself one of the barrel's own exports,
+  // never reads the barrel's exports object before it is fully built.
+  // options.processRoot, absent in production, is a test-only fixture root
+  // for the default path: assertGameClosed's own default is the real /proc.
+  const guardFn = typeof guard === 'function' ? guard
+    : () => require('../linux').assertGameClosed(undefined, gameDir, exePath, undefined, undefined, emit, options.processRoot);
   if (typeof guardFn !== 'function') throw fail('errLinuxGuard', 'The running-game guard is not a function');
   await guardFn();
 
