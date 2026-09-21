@@ -102,6 +102,19 @@ test('caseAwareTarget returns the given name where no other-case entry exists', 
 });
 
 // [test->proton-install-core~21~1]
+test('caseAwareTarget returns the given name where the directory cannot be read', (t) => {
+  const parent = temp(t, 'case-unreadable');
+  const dir = path.join(parent, 'locked');
+  fs.mkdirSync(dir);
+  fs.chmodSync(dir, 0o000);
+  try {
+    assert.equal(caseAwareTarget(dir, 'dxgi.dll'), 'dxgi.dll');
+  } finally {
+    fs.chmodSync(dir, 0o755);
+  }
+});
+
+// [test->proton-install-core~21~1]
 test('copyTracked writing dxgi.dll beside an existing DXGI.dll backs it up and writes under the existing name', async (t) => {
   const gameDir = temp(t, 'case-write');
   const existing = path.join(gameDir, 'DXGI.dll');
