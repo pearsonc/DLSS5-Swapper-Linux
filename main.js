@@ -1656,9 +1656,9 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
     ? steam().find((game) => path.resolve(game.dir) === path.resolve(dir))
     : null;
   const proton = linux.protonContext(contextForSteamGame, protonGame);
-  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton }); if (refused) return refused;
-
   const send = (e) => event.sender.send('job', e);
+  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton, scan, log: send }); if (refused) return refused;
+
   await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
   if (fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errBackendRecovery' };
   const old = backends.readManifest(dir);
@@ -1711,7 +1711,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
     // 0.1.1.5 and crashes on 0.2.0-patch1, and until now the only way back was
     // to keep an old copy of the whole app.
     const wanted = (loadState().optiscalerVersion || {})[path.resolve(dir).toLowerCase()];
-    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), release); }
+    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), process.platform === 'linux' ? route : release, undefined, undefined, send); }
     catch (err) { return { ok: false, code: componentCode(err, 'errOptiDownload'), message: err.message }; }
     send({ code: 'optiVerified', params: { version: release.version } });
   }
@@ -1749,7 +1749,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
       }
     }
   }
-  const compilerRefusal = await linux.compilerCheck(optiRoot); if (compilerRefusal) return compilerRefusal;
+  const compilerRefusal = await linux.compilerCheck(p.source.dir); if (compilerRefusal) return compilerRefusal;
 
   if (route === 'feeder') {
     try {
