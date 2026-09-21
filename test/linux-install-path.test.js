@@ -95,8 +95,17 @@ function loadMain(userData, options) {
     },
     './src/core/scan.js': { scanGame: async () => ({ chosen: options.target, exeCandidates: [options.target], hasNativeDlss: true }) },
     './src/core/compatibility': { assertSafeTarget() {}, hasAntiCheat: () => false },
+    // The verifier's remaining install-path case leaves assertGameClosed's
+    // own matching logic real (never stubbed to a no-op): the fixture hands
+    // it a processRoot standing in for /proc, the same shape
+    // test/linux-running-game.test.js uses, so the game-running refusal is
+    // the genuine check, not a mock of it. gpuInfo, never nvidia-smi
+    // itself, stays a fixture on both paths.
     './src/core/install-guards': {
-      assertGameClosed: async () => {}, antiCheatPresent: () => false,
+      assertGameClosed: options.fixtureProcessRoot
+        ? (gameDir, exePath, runner, locked, log) => require('../src/core/install-guards').assertGameClosed(gameDir, exePath, runner, locked, log, options.fixtureProcessRoot)
+        : async () => {},
+      antiCheatPresent: () => false,
       gpuInfo: async () => [{ name: 'NVIDIA GeForce RTX 5090', driver: '616.56' }],
       gpuSupported: () => true, gpuModelSupported: () => true, driverSupported: () => true,
       driverNeuralFault: () => false, driverNames: () => ''
@@ -172,6 +181,14 @@ test('the install handler on Linux reaches the route gate, the ensure step, the 
   assert.ok(launchEvent, 'linux-launch-options was emitted');
   assert.deepEqual(launchEvent.params, { entry: 'U9FIX', cell: 'none' });
 
+  // proton-install-core~5~5: the fixture's Steam game names a steamRoot
+  // that carries no library file, so the context is unresolved and the
+  // route gate's second call site (main.js:1663) emits the one job event
+  // that names it, never more than once.
+  const unresolvedEvents = events.filter((e) => e.code === 'linux-proton-unresolved');
+  assert.equal(unresolvedEvents.length, 1, 'linux-proton-unresolved was emitted exactly once');
+  assert.equal(unresolvedEvents[0].params.reason, 'not-listed');
+
   // The before-install record, Annex B: the copy step's manifest carries
   // linuxBefore from the walk taken before any write.
   const manifestPath = path.join(gameDir, '_DLSS5_Backup', 'manifest.json');
@@ -197,4 +214,46 @@ test('the install handler on Linux reaches the route gate, the ensure step, the 
   // OptiScaler.ini's key was applied once placed (review finding
   // conformance 4-6).
   assert.match(fs.readFileSync(path.join(gameDir, 'OptiScaler.ini'), 'utf8'), /Enabled=true/);
+});
+
+// A fixture process root of the shape test/linux-running-game.test.js
+// uses: a hidden process (no readable exe or maps) whose argv[0] is the
+// game's own executable, judged by path per proton-install-core~14~6.
+function plantMatchingProcess(root, exePath) {
+  const pidDir = path.join(root, '4321');
+  fs.mkdirSync(pidDir, { recursive: true });
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
+  fs.writeFileSync(path.join(pidDir, 'status'), `Uid:\t${uid}\t${uid}\t${uid}\t${uid}\n`);
+  fs.writeFileSync(path.join(pidDir, 'cmdline'), `${exePath}\0`);
+}
+
+// [test->proton-install-core~28~9]
+test('the install handler on Linux refuses with errGameRunning, through the real assertGameClosed, before any file is placed', async (t) => {
+  stubFetch(t);
+  const userData = temp(t, 'guard-real');
+  const gameDir = path.join(userData, 'game');
+  fs.mkdirSync(gameDir, { recursive: true });
+  const exePath = path.join(gameDir, 'Game.exe');
+  fs.writeFileSync(exePath, 'exe');
+  const releaseDir = path.join(userData, 'release');
+  const release = writeRelease(releaseDir);
+  installFixtureEntries(release.digest, release.bytes);
+  t.after(() => { delete require.cache[entriesPath]; });
+
+  const fixtureProcessRoot = temp(t, 'proc');
+  plantMatchingProcess(fixtureProcessRoot, exePath);
+
+  const target = { path: exePath, rel: 'Game.exe', bitness: 64, api: 'dxgi', apiLabel: 'DirectX 12' };
+  const steamGames = [{ id: 990080, dir: gameDir, steamRoot: '/fixture/steam', protonPrefix: '/fixture/steam/steamapps/compatdata/990080/pfx' }];
+  const { handlers } = loadMain(userData, { target, releaseDir, steamGames, fixtureProcessRoot });
+
+  const events = [];
+  const result = await handlers.get('install')({ sender: { send: (_channel, e) => events.push(e) } }, gameDir, exePath, 'optiscaler', 'dxgi');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'errGameRunning');
+
+  // Before any file is placed: nothing besides the executable itself sits
+  // in the game folder, and no backup directory was ever created.
+  assert.deepEqual(fs.readdirSync(gameDir), ['Game.exe']);
 });
