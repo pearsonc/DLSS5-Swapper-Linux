@@ -1,5 +1,5 @@
 'use strict';
-// proton-install-core~31~5: off Linux, every hook Annex D marks as replacing
+// proton-install-core~31~6: off Linux, every hook Annex D marks as replacing
 // upstream code returns what the replaced code returned at 24bd2ac for the
 // same arguments. The oracle is `git show 24bd2ac:<file>`, loaded beside the
 // hooked file so its relative requires resolve the same way, and both are
@@ -84,7 +84,7 @@ async function outcome(work) {
 
 // install-guards.js:39, the running-game check, through its injectable runner
 // and lock probe.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('assertGameClosed off Linux returns what upstream returned for the same runner and lock answers', async () => {
   const gameDir = path.join(os.tmpdir(), 'off-platform-game');
   const exe = path.join(gameDir, 'Game.exe');
@@ -112,7 +112,7 @@ test('assertGameClosed off Linux returns what upstream returned for the same run
 });
 
 // install-guards.js:91, the GPU query, through its injectable runner.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('gpuInfo off Linux returns what upstream returned for the same runner', async () => {
   const csv = 'NVIDIA GeForce RTX 5090, 616.56\nNVIDIA GeForce RTX 4090, 616.92\n';
   for (const runner of [async () => csv, async () => { throw new Error('ENOENT'); }]) {
@@ -155,7 +155,7 @@ function plantGame(dir) {
 
 // apply.js:150 and :257, the file modes, and :221-260, the case-aware
 // targets, through copyTracked, writeTracked and trackBeforeWrite.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('copyTracked, writeTracked and trackBeforeWrite off Linux leave what upstream left', async (t) => {
   const run = async (mod, name) => {
     const dir = temp(t, name);
@@ -179,7 +179,7 @@ test('copyTracked, writeTracked and trackBeforeWrite off Linux leave what upstre
 });
 
 // apply.js:959, the restore, through restore() over a planted manifest.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('restore off Linux returns and leaves what upstream did', async (t) => {
   const run = async (mod, name) => {
     const dir = temp(t, name);
@@ -202,7 +202,7 @@ test('restore off Linux returns and leaves what upstream did', async (t) => {
 
 // The Restore row passes restoreFiles in, and off Linux the hook calls it
 // unchanged: proven with a spy standing in for the argument.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('restoreSweep off Linux calls the restoreFiles it is handed, once, with its own arguments', async () => {
   const calls = [];
   const restoreFiles = async (...args) => { calls.push(args); return 'what restoreFiles returned'; };
@@ -217,7 +217,7 @@ test('restoreSweep off Linux calls the restoreFiles it is handed, once, with its
 
 // scan.js:85-87, compatibility.js:45 and apply.js:345-346 share the
 // case-aware target; the first two are reachable through exported functions.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('inspectReShade and oldShaderCompiler off Linux return what upstream returned', (t) => {
   const dir = temp(t, 'scan');
   fs.writeFileSync(path.join(dir, 'dxgi.dll'), 'not a portable executable');
@@ -233,7 +233,7 @@ test('inspectReShade and oldShaderCompiler off Linux return what upstream return
 });
 
 // The two inline helpers, at every site's inputs.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('caseAwareTarget and fileMode off Linux return upstream\'s inline values', (t) => {
   const dir = temp(t, 'case');
   fs.writeFileSync(path.join(dir, 'DXGI.dll'), 'x');
@@ -245,7 +245,7 @@ test('caseAwareTarget and fileMode off Linux return upstream\'s inline values', 
 
 // backend-manager.js:130, the copy step, through install() on the optiscaler
 // route with optiscaler.install recording what it was handed.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('backend install on the optiscaler route off Linux hands optiscaler.install what upstream handed it', async (t) => {
   const original = optiscaler.install;
   t.after(() => { optiscaler.install = original; });
@@ -300,7 +300,7 @@ function loadMain(source, userData, options) {
   return { handlers, dialogs };
 }
 
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('the install handler off Linux returns and emits what upstream did at every replaced site', async (t) => {
   const sources = { upstream: execFileSync('git', ['-C', root, 'show', `${ORACLE}:main.js`], { encoding: 'utf8' }), hooked: fs.readFileSync(path.join(root, 'main.js'), 'utf8') };
   const originals = { ensureOptiScaler: optiscaler.ensureOptiScaler, checkConflicts: optiscaler.checkConflicts };
