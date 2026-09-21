@@ -132,6 +132,7 @@ test('a hidden process naming the game only past argv[0] is admitted, since only
 test('a drive letter a dosdevices link translates under the game folder refuses, naming the identifier and the path', async (t) => {
   const gameDir = tempDir(t, 'swapper-u2-game-');
   fs.mkdirSync(path.join(gameDir, 'Sub'), { recursive: true });
+  fs.writeFileSync(path.join(gameDir, 'Sub', 'Game.exe'), 'binary');
   const prefix = tempDir(t, 'swapper-u2-prefix-');
   fs.mkdirSync(path.join(prefix, 'dosdevices'), { recursive: true });
   fs.symlinkSync(gameDir, path.join(prefix, 'dosdevices', 's:'));
