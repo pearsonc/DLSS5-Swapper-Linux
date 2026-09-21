@@ -38,7 +38,7 @@ function executableLocked(exePath) {
 }
 
 async function assertGameClosed(gameDir, exePath, runner = run, locked = executableLocked, log, processRoot) {
-  return linux.assertGameClosed(gameDir, exePath, runner, locked, log, processRoot);
+  return linux.assertGameClosed(matchingProcesses, gameDir, exePath, runner, locked, log, processRoot);
 }
 // Two separate questions, because only one of them is a hard requirement.
 // The card is: DLSS-NR runs on the RTX 50 path. The driver is not: the model

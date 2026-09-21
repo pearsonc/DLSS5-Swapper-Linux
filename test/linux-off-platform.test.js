@@ -1,5 +1,5 @@
 'use strict';
-// proton-install-core~31~5: off Linux, every hook Annex D marks as replacing
+// proton-install-core~31~6: off Linux, every hook Annex D marks as replacing
 // upstream code returns what the replaced code returned at 24bd2ac for the
 // same arguments. The oracle is `git show 24bd2ac:<file>`, loaded beside the
 // hooked file so its relative requires resolve the same way, and both are
@@ -73,7 +73,8 @@ const upstream = {
   apply: oracle('src/core/apply.js'),
   scan: oracle('src/core/scan.js'),
   compatibility: oracle('src/core/compatibility.js'),
-  backends: oracle('src/core/backend-manager.js')
+  backends: oracle('src/core/backend-manager.js'),
+  proton: oracle('src/core/proton.js')
 };
 
 async function outcome(work) {
@@ -83,7 +84,7 @@ async function outcome(work) {
 
 // install-guards.js:39, the running-game check, through its injectable runner
 // and lock probe.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('assertGameClosed off Linux returns what upstream returned for the same runner and lock answers', async () => {
   const gameDir = path.join(os.tmpdir(), 'off-platform-game');
   const exe = path.join(gameDir, 'Game.exe');
@@ -111,7 +112,7 @@ test('assertGameClosed off Linux returns what upstream returned for the same run
 });
 
 // install-guards.js:91, the GPU query, through its injectable runner.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('gpuInfo off Linux returns what upstream returned for the same runner', async () => {
   const csv = 'NVIDIA GeForce RTX 5090, 616.56\nNVIDIA GeForce RTX 4090, 616.92\n';
   for (const runner of [async () => csv, async () => { throw new Error('ENOENT'); }]) {
@@ -127,6 +128,21 @@ test('gpuInfo off Linux returns what upstream returned for the same runner', asy
   assert.equal(await hooked.guards.gpuInfo(async () => { throw new Error('ENOENT'); }), null);
 });
 
+// main.js:1658, the Proton context, through the injected contextForSteamGame.
+// [test->proton-install-core~31~6]
+test('protonContext takes contextForSteamGame injected as its first argument and returns what it returned', () => {
+  const calls = [];
+  const withPrefix = { id: 990080, steamRoot: '/home/user/.local/share/Steam', protonPrefix: '/home/user/.local/share/Steam/steamapps/compatdata/990080/pfx' };
+  const stub = (game) => { calls.push(game); return { proton: '/stub/proton', prefix: game.protonPrefix, steamRoot: game.steamRoot, appid: game.id }; };
+  const result = hooked.linux.protonContext(stub, withPrefix);
+  assert.deepEqual(calls, [withPrefix], 'the injected function was called with the game, not with itself');
+  assert.deepEqual(result, { proton: '/stub/proton', prefix: withPrefix.protonPrefix, steamRoot: withPrefix.steamRoot, appid: withPrefix.id });
+
+  const withNeither = { id: 1363080 };
+  assert.equal(hooked.linux.protonContext(upstream.proton.contextForSteamGame, withNeither), upstream.proton.contextForSteamGame(withNeither));
+  assert.equal(upstream.proton.contextForSteamGame(withNeither), null, 'a game carrying neither field resolves to null in the oracle itself');
+});
+
 function plantGame(dir) {
   fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Game.exe'), 'exe');
@@ -139,7 +155,7 @@ function plantGame(dir) {
 
 // apply.js:150 and :257, the file modes, and :221-260, the case-aware
 // targets, through copyTracked, writeTracked and trackBeforeWrite.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('copyTracked, writeTracked and trackBeforeWrite off Linux leave what upstream left', async (t) => {
   const run = async (mod, name) => {
     const dir = temp(t, name);
@@ -157,13 +173,14 @@ test('copyTracked, writeTracked and trackBeforeWrite off Linux leave what upstre
   const a = await run(upstream.apply, 'upstream-apply');
   const b = await run(hooked.apply, 'hooked-apply');
   assert.deepEqual(b, a);
-  assert.deepEqual(a.modes, ['666', '666', '666', '664'], 'upstream sets 0o666 on what existed and leaves a fresh write at the umask');
+  const freshWriteMode = (0o666 & ~process.umask()).toString(8);
+  assert.deepEqual(a.modes, ['666', '666', '666', freshWriteMode], 'upstream sets 0o666 on what existed and leaves a fresh write at the process umask, whatever it is on this host');
   assert.equal(a.manifest.replaced.length, 2);
   assert.equal(a.manifest.added.length, 3);
 });
 
 // apply.js:959, the restore, through restore() over a planted manifest.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('restore off Linux returns and leaves what upstream did', async (t) => {
   const run = async (mod, name) => {
     const dir = temp(t, name);
@@ -186,7 +203,7 @@ test('restore off Linux returns and leaves what upstream did', async (t) => {
 
 // The Restore row passes restoreFiles in, and off Linux the hook calls it
 // unchanged: proven with a spy standing in for the argument.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('restoreSweep off Linux calls the restoreFiles it is handed, once, with its own arguments', async () => {
   const calls = [];
   const restoreFiles = async (...args) => { calls.push(args); return 'what restoreFiles returned'; };
@@ -201,7 +218,7 @@ test('restoreSweep off Linux calls the restoreFiles it is handed, once, with its
 
 // scan.js:85-87, compatibility.js:45 and apply.js:345-346 share the
 // case-aware target; the first two are reachable through exported functions.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('inspectReShade and oldShaderCompiler off Linux return what upstream returned', (t) => {
   const dir = temp(t, 'scan');
   fs.writeFileSync(path.join(dir, 'dxgi.dll'), 'not a portable executable');
@@ -217,7 +234,7 @@ test('inspectReShade and oldShaderCompiler off Linux return what upstream return
 });
 
 // The two inline helpers, at every site's inputs.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('caseAwareTarget and fileMode off Linux return upstream\'s inline values', (t) => {
   const dir = temp(t, 'case');
   fs.writeFileSync(path.join(dir, 'DXGI.dll'), 'x');
@@ -227,9 +244,34 @@ test('caseAwareTarget and fileMode off Linux return upstream\'s inline values', 
   for (const mode of [undefined, 0o600, 0o644, 0o755]) assert.equal(hooked.linux.fileMode(mode), 0o666);
 });
 
+// apply.js:262, the mode read writeTracked hands linux.fileMode(: it moves
+// out of the chmod's own try, so a new file hands fileMode( undefined
+// exactly as copyOver's absent stat does at :146, rather than skipping the
+// call outright. Untagged: no approved criterion reads writeTracked's
+// pre-write mode today, ~20~1 being wave 2's; this proves the wiring
+// report-code-quality.md's MEDIUM finding named, that the site "cannot
+// deliver the contract src/linux/file-mode.js:5-6 documents".
+test('writeTracked off Linux calls fileMode with the pre-write mode, or undefined for a new file', async (t) => {
+  const linuxBarrel = require('../src/linux');
+  const seen = [];
+  const original = linuxBarrel.fileMode;
+  linuxBarrel.fileMode = (mode) => { seen.push(mode); return original(mode); };
+  t.after(() => { linuxBarrel.fileMode = original; });
+  const dir = temp(t, 'write-tracked-mode');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Game.exe'), 'exe');
+  const manifest = hooked.apply.beginManifest(dir, path.join(dir, 'Game.exe'), 'dxgi');
+  await hooked.apply.writeTracked(manifest, dir, path.join(dir, 'fresh.ini'), 'new', { kind: 'config', oldVersion: null });
+  assert.deepEqual(seen, [undefined], 'a new file: no prior mode to read');
+  fs.chmodSync(path.join(dir, 'fresh.ini'), 0o600);
+  await hooked.apply.writeTracked(manifest, dir, path.join(dir, 'fresh.ini'), 'again', { kind: 'config', oldVersion: '1' });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1] & 0o777, 0o600, 'an existing file: its mode before the write');
+});
+
 // backend-manager.js:130, the copy step, through install() on the optiscaler
 // route with optiscaler.install recording what it was handed.
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('backend install on the optiscaler route off Linux hands optiscaler.install what upstream handed it', async (t) => {
   const original = optiscaler.install;
   t.after(() => { optiscaler.install = original; });
@@ -284,7 +326,7 @@ function loadMain(source, userData, options) {
   return { handlers, dialogs };
 }
 
-// [test->proton-install-core~31~5]
+// [test->proton-install-core~31~6]
 test('the install handler off Linux returns and emits what upstream did at every replaced site', async (t) => {
   const sources = { upstream: execFileSync('git', ['-C', root, 'show', `${ORACLE}:main.js`], { encoding: 'utf8' }), hooked: fs.readFileSync(path.join(root, 'main.js'), 'utf8') };
   const originals = { ensureOptiScaler: optiscaler.ensureOptiScaler, checkConflicts: optiscaler.checkConflicts };
@@ -328,4 +370,52 @@ test('the install handler off Linux returns and emits what upstream did at every
       assert.equal(a.events.find(e => e.code === 'optiVerified').params.version, pinned, `scenario ${i} reported it`);
     }
   }
+});
+
+// The require graph from src/linux/ into src/core/ must never close a cycle
+// back through the barrel, or a module reached from src/core/ through the
+// barrel would load before its own exports exist. Only a top-level require
+// (a require(...) call at column 0, never inside a function body) actually
+// runs at module-load time, so only those form the graph a cycle can appear
+// in; a lazy require inside a function is not part of it.
+// [test->proton-install-core~31~6]
+test('no module under src/linux/ requires, even transitively, a src/core/ module that requires the barrel', () => {
+  const topLevelRequires = (file) => {
+    const text = fs.readFileSync(file, 'utf8');
+    const rels = [];
+    for (const line of text.split('\n')) {
+      const m = /^const .* = require\('(\.\.?\/[^']+)'\)/.exec(line);
+      if (m) rels.push(m[1]);
+    }
+    return rels;
+  };
+  const resolveRel = (fromFile, rel) => {
+    const base = path.resolve(path.dirname(fromFile), rel);
+    if (fs.existsSync(base) && fs.statSync(base).isDirectory()) return path.join(base, 'index.js');
+    return base.endsWith('.js') ? base : `${base}.js`;
+  };
+  const linuxDir = path.join(root, 'src', 'linux');
+  const coreDir = path.join(root, 'src', 'core');
+  const barrel = path.join(linuxDir, 'index.js');
+  const violations = [];
+  for (const name of fs.readdirSync(linuxDir)) {
+    const file = path.join(linuxDir, name);
+    if (!file.endsWith('.js')) continue;
+    const seen = new Set();
+    const stack = topLevelRequires(file)
+      .map((rel) => resolveRel(file, rel))
+      .filter((abs) => abs.startsWith(coreDir + path.sep));
+    while (stack.length) {
+      const next = stack.pop();
+      if (seen.has(next)) continue;
+      seen.add(next);
+      if (!fs.existsSync(next)) continue;
+      for (const rel of topLevelRequires(next)) {
+        const abs = resolveRel(next, rel);
+        if (abs === barrel) { violations.push(`${path.relative(root, file)} -> ${path.relative(root, next)} -> the barrel`); continue; }
+        if (abs.startsWith(coreDir + path.sep)) stack.push(abs);
+      }
+    }
+  }
+  assert.deepEqual(violations, []);
 });

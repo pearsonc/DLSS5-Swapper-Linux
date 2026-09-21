@@ -1655,7 +1655,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   const protonGame = process.platform === 'linux'
     ? steam().find((game) => path.resolve(game.dir) === path.resolve(dir))
     : null;
-  const proton = linux.protonContext(protonGame);
+  const proton = linux.protonContext(contextForSteamGame, protonGame);
   const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton }); if (refused) return refused;
 
   const send = (e) => event.sender.send('job', e);

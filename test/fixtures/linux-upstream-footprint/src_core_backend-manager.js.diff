@@ -1,0 +1,8 @@
+diff --git a/src/core/backend-manager.js b/src/core/backend-manager.js
+--- a/src/core/backend-manager.js
++++ b/src/core/backend-manager.js
+@@ -10,0 +11 @@ const compatibility = require('./compatibility');
++const linux = require('../linux');
+@@ -130 +131 @@ async function install(config, log = () => {}) {
+-    if (config.route === 'optiscaler') manifest = await optiscaler.install({ ...config, profile }, log);
++    if (config.route === 'optiscaler') manifest = await linux.installEntry({ ...config, profile, ensuredRoot: config.optiRoot, log });
