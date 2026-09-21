@@ -126,19 +126,45 @@ function installPathOf(toolDir) {
   return path.isAbsolute(m[1]) ? m[1] : path.join(toolDir, m[1]);
 }
 
+// The balanced-brace body of the KeyValues block named `key`, starting the
+// search at or after `from`, or null where no such block exists. A regex
+// alone cannot see nesting, so a same-named key inside a sibling section
+// (an app record's own numeric key, say) is not mistaken for the block.
+function vdfBlock(text, key, from = 0) {
+  const marker = `"${key}"`;
+  const markerIdx = text.indexOf(marker, from);
+  if (markerIdx === -1) return null;
+  const open = text.indexOf('{', markerIdx + marker.length);
+  if (open === -1) return null;
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0) return text.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
 // The identifiable tool's own directory, where CompatToolMapping names one
 // for this appid and a compatibilitytool.vdf in a tool root declares it.
 // A Valve internal name with no such declaration is not identifiable and is
-// not cross-checked, per Annex B.
+// not cross-checked, per Annex B. The appid is read only inside the
+// CompatToolMapping block itself, never the first "<appid>" occurring
+// anywhere in config.vdf, since the same numeric key names other, unrelated
+// per-app records.
 function identifiableToolDirFor(roots, toolRoots, appid) {
   for (const root of roots) {
     const configVdf = path.join(root, 'config', 'config.vdf');
     if (!fs.existsSync(configVdf)) continue;
     let text;
     try { text = fs.readFileSync(configVdf, 'utf8'); } catch { continue; }
-    const idx = text.indexOf(`"${appid}"`);
-    if (idx === -1) continue;
-    const nameMatch = text.slice(idx).match(/"name"\s+"([^"]*)"/);
+    const mapping = vdfBlock(text, 'CompatToolMapping');
+    if (mapping === null) continue;
+    const appBlock = vdfBlock(mapping, String(appid));
+    if (appBlock === null) continue;
+    const nameMatch = appBlock.match(/"name"\s+"([^"]*)"/);
     const toolName = nameMatch ? nameMatch[1] : null;
     if (!toolName) continue;
     for (const toolRoot of toolRoots) {
@@ -190,14 +216,19 @@ function protonContext(contextForSteamGame, game, steamRoots) {
   const toolRoots = toolRootsOf(roots);
   const enumeratedDirs = libs.map((lib) => path.join(lib, 'steamapps', 'common')).concat(toolRoots);
 
+  // Annex B: "the manifest-named directory taken where both hold one", so
+  // a compatibilitytool.vdf's install_path is tried before a plain child of
+  // an enumerated directory, since a tool root's own child can qualify as
+  // both (it is itself a child of an enumerated directory) while a nested
+  // install_path names the more specific, authoritative directory.
   let build = null;
-  for (const dir of enumeratedDirs) {
-    build = manifestChildContaining(dir, canonicalLine2);
+  for (const toolRoot of toolRoots) {
+    build = installPathChildContaining(toolRoot, canonicalLine2);
     if (build) break;
   }
   if (!build) {
-    for (const toolRoot of toolRoots) {
-      build = installPathChildContaining(toolRoot, canonicalLine2);
+    for (const dir of enumeratedDirs) {
+      build = manifestChildContaining(dir, canonicalLine2);
       if (build) break;
     }
   }
