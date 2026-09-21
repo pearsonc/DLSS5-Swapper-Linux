@@ -35,16 +35,21 @@ function noopGuard() { return async () => {}; }
 test('apply.restore, through the real restoreFiles, keeps every backup under originals/ and reports a changed file and an added one via linux-restore-sweep', async (t) => {
   const dir = temp(t, 'game');
   const gameDir = path.join(dir, 'game');
-  fs.mkdirSync(gameDir, { recursive: true });
-  const exePath = path.join(gameDir, 'Game.exe');
+  // The executable sits below the game root, per the verifier's remedy: the
+  // record writer and the sweep must agree on rel's base (game-folder
+  // relative, not executable-folder relative) or a restore here sweeps the
+  // whole executable folder into swept/ (reversibility finding 6-1).
+  const exeDir = path.join(gameDir, 'sub', 'dir');
+  fs.mkdirSync(exeDir, { recursive: true });
+  const exePath = path.join(exeDir, 'Game.exe');
   fs.writeFileSync(exePath, 'exe');
 
   // A pre-existing file the install neither placed nor replaced: part of
   // the before-install record, and left alone by the copy step.
-  fs.writeFileSync(path.join(gameDir, 'readme.txt'), 'original readme');
+  fs.writeFileSync(path.join(exeDir, 'readme.txt'), 'original readme');
   // A pre-existing file the install replaces: upstream's own tracked copy
   // backs it up under originals/ before overwriting it.
-  fs.writeFileSync(path.join(gameDir, 'dxgi.dll'), 'old proxy bytes');
+  fs.writeFileSync(path.join(exeDir, 'dxgi.dll'), 'old proxy bytes');
 
   // The extraction root a real ensure step would have produced: extracted
   // directly from the committed fixture archive here, since this test is
@@ -75,13 +80,13 @@ test('apply.restore, through the real restoreFiles, keeps every backup under ori
 
   const backupRoot = apply.backupRoot(gameDir);
   const backupPrefix = manifest.backupPrefix;
-  const originalDxgi = path.join(backupRoot, backupPrefix, 'dxgi.dll');
+  const originalDxgi = path.join(backupRoot, backupPrefix, 'sub', 'dir', 'dxgi.dll');
   assert.ok(fs.existsSync(originalDxgi), 'the replaced file was backed up under originals/ before the install overwrote it');
   assert.equal(fs.readFileSync(originalDxgi, 'utf8'), 'old proxy bytes');
 
   // After the install: one file the fixture changes, one it adds.
-  fs.writeFileSync(path.join(gameDir, 'readme.txt'), 'a different readme, a different size');
-  fs.writeFileSync(path.join(gameDir, 'stray.log'), 'nobody placed this');
+  fs.writeFileSync(path.join(exeDir, 'readme.txt'), 'a different readme, a different size');
+  fs.writeFileSync(path.join(exeDir, 'stray.log'), 'nobody placed this');
 
   const events = [];
   const result = await apply.restore(gameDir, (e) => events.push(e));
@@ -90,21 +95,21 @@ test('apply.restore, through the real restoreFiles, keeps every backup under ori
 
   // The backup survives restore, per ADR-004: originals/ is never cleared.
   assert.ok(fs.existsSync(originalDxgi), 'the backup under originals/ still exists after restore');
-  assert.equal(fs.readFileSync(path.join(gameDir, 'dxgi.dll'), 'utf8'), 'old proxy bytes', 'the replaced file itself was restored from its backup');
+  assert.equal(fs.readFileSync(path.join(exeDir, 'dxgi.dll'), 'utf8'), 'old proxy bytes', 'the replaced file itself was restored from its backup');
 
   const sweepEvents = events.filter((e) => e.code === 'linux-restore-sweep');
 
-  const changed = sweepEvents.find((e) => e.params.rel === 'readme.txt');
-  assert.ok(changed, 'a linux-restore-sweep event named the changed file');
+  const changed = sweepEvents.find((e) => e.params.rel === 'sub/dir/readme.txt');
+  assert.ok(changed, 'a linux-restore-sweep event named the changed file, rel against the game folder');
   assert.equal(changed.params.outcome, 'changed');
-  assert.equal(fs.readFileSync(path.join(gameDir, 'readme.txt'), 'utf8'), 'a different readme, a different size',
+  assert.equal(fs.readFileSync(path.join(exeDir, 'readme.txt'), 'utf8'), 'a different readme, a different size',
     'a changed, listed file is named and left exactly as the fixture left it, never swept');
 
-  const added = sweepEvents.find((e) => e.params.rel === 'stray.log');
-  assert.ok(added, 'a linux-restore-sweep event named the added file');
+  const added = sweepEvents.find((e) => e.params.rel === 'sub/dir/stray.log');
+  assert.ok(added, 'a linux-restore-sweep event named the added file, rel against the game folder');
   assert.equal(added.params.outcome, 'moved');
   assert.match(added.params.to, /^_DLSS5_Backup\/swept\/[0-9a-f-]+\/stray\.log$/);
-  assert.equal(fs.existsSync(path.join(gameDir, 'stray.log')), false, 'the unlisted file no longer sits where it was added');
+  assert.equal(fs.existsSync(path.join(exeDir, 'stray.log')), false, 'the unlisted file no longer sits where it was added');
   assert.ok(fs.existsSync(path.join(gameDir, added.params.to)), 'it was moved under swept/, not deleted');
 
   // Nothing else was swept: the only entries under swept/ are the one file

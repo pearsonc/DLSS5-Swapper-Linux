@@ -17,8 +17,11 @@ const HOOKS = [
   { hook: 'Barrel import per hooked file', file: 'src/core/install-guards.js', literal: "require('../linux')", sites: 1 },
   { hook: 'Barrel import per hooked file', file: 'src/core/scan.js', literal: "require('../linux')", sites: 1 },
   { hook: 'Proton context', file: 'main.js', literal: 'linux.protonContext(', sites: 1 },
-  { hook: 'Route allowlist and native refusal', file: 'main.js', literal: 'linux.routeGate(', sites: 1 },
+  // [test->proton-install-core~28~9]
+  { hook: 'Route allowlist and native refusal', file: 'main.js', literal: 'linux.routeGate(', sites: 2 },
   { hook: 'Compiler check', file: 'main.js', literal: 'linux.compilerCheck(', sites: 1 },
+  // [test->proton-install-core~28~9]
+  { hook: 'Driver wording shown', file: 'main.js', literal: 'g.note', sites: 1 },
   { hook: 'Linux entry ensure step', file: 'main.js', literal: 'linux.ensureEntry(', sites: 1 },
   { hook: 'Running-game check', file: 'src/core/install-guards.js', literal: 'linux.assertGameClosed(', sites: 1 },
   { hook: 'GPU query and driver wording', file: 'src/core/install-guards.js', literal: 'linux.gpuInfo(', sites: 1 },
