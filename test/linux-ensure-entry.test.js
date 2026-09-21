@@ -172,6 +172,41 @@ test('a shim 7z first on PATH writing wrong bytes under a listed name refuses na
 });
 
 // [test->proton-install-core~10~7]
+test('a shim 7z first on PATH that extracts an unlisted member refuses naming it', async () => {
+  const cacheRoot = tmpDir('u8-unlisted-');
+  const shimDir = tmpDir('u8-shimbin2-');
+  const shim = path.join(shimDir, '7z');
+  const realSevenZip = '/usr/bin/7z';
+  fs.writeFileSync(shim, [
+    '#!/bin/sh',
+    `"${realSevenZip}" "$@"`,
+    'dir=""',
+    'for arg in "$@"; do',
+    '  case "$arg" in',
+    '    -o*) dir="${arg#-o}" ;;',
+    '  esac',
+    'done',
+    'mkdir -p "$dir/OptiScaler"',
+    'printf "unlisted extra bytes\\n" > "$dir/OptiScaler/EXTRA-UNLISTED.dll"',
+    'exit 0'
+  ].join('\n') + '\n');
+  fs.chmodSync(shim, 0o755);
+  usePath(shimDir);
+  const entry = cloneEntry();
+  const fetcher = fetchersFor(entry, readFixture('archive-control.7z'), readFixture('licence.txt'));
+  await assert.rejects(
+    () => ensureEntry(cacheRoot, entry, fetcher, 5000),
+    (err) => {
+      assert.equal(err.code, 'errLinuxMemberUnexpected');
+      assert.match(err.message, /OptiScaler\/EXTRA-UNLISTED\.dll/);
+      return true;
+    }
+  );
+  fs.rmSync(cacheRoot, { recursive: true, force: true });
+  fs.rmSync(shimDir, { recursive: true, force: true });
+});
+
+// [test->proton-install-core~10~7]
 test('the control extracts the placement table set in both directions with the decoy absent', async () => {
   const cacheRoot = tmpDir('u8-control-');
   const entry = cloneEntry();
