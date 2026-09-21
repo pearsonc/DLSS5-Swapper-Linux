@@ -1,6 +1,6 @@
 # Generated from the specification. Never hand-edit.
 source: proton-install-core-spec.md
-source_sha256: fb218afb4a81e3c62fcbddacffb0ed6a733cd75f1e1ae7cee580eeb0b09fecbb
+source_sha256: d0f989a119f19c79cb80ae637f87ea1e83107b735679266a5271b2be62620ac0
 criteria:
   - id: "proton-install-core~1~1"
     text: "WHEN the app resolves the Proton context of a Steam game on Linux, the app SHALL take the prefix from `steamapps/compatdata/<appid>/pfx` inside the Steam library that lists the game in `libraryfolders.vdf`. [Method: upstream builds that path under the Steam root at `src/library.js:123`, and all 18 prefixes on Thor, 14 games and four Proton tool app ids, sit in a library the Steam root does not hold, whose `compatdata` holds Steam's own `0` and an empty `1358800`, per the requirements' survey of prefix locations]"
@@ -74,7 +74,7 @@ criteria:
     text: "The app SHALL gate no install on Linux on the driver version, and SHALL show wording saying it cannot judge a Linux driver version."
   - id: "proton-install-core~27~1"
     text: "IF `nvidia-smi` is absent or exits non-zero on Linux, THEN the app SHALL show the GPU as unknown and carry the install on."
-  - id: "proton-install-core~28~6"
+  - id: "proton-install-core~28~7"
     text: "The app SHALL carry its Linux behaviour in files under `src/linux/`, reached from an upstream file only through a hook Annex D lists, with no other change to an upstream file than the in-place edits Annex D marks."
   - id: "proton-install-core~29~5"
     text: "IF a hook Annex D lists is absent from the upstream file it names, THEN the fork's test suite SHALL fail and name the hook and the file."
