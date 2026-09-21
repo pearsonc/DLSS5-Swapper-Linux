@@ -24,6 +24,7 @@ const ANNEX_E = [
   ['test/payload-guidance.test.js', 'from source it still says the thing a developer needs'],
   ['test/payload-guidance.test.js', 'without a temp path it still names the folder in a form a person can paste'],
   ['test/shader-compiler.test.js', 'the install retires the stale compiler and Restore gives it back'],
+  ['test/optiscaler.test.js', 'GPU requirements and process guards reject known unsupported/running targets'],
 ];
 
 /** Writes one `node --test` file holding the named tests, each passing or failing as asked. */
