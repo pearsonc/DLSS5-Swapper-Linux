@@ -1,5 +1,5 @@
 'use strict';
-// proton-install-core~28~6: the fork carries its Linux behaviour under
+// proton-install-core~28~7: the fork carries its Linux behaviour under
 // src/linux/, reached from an upstream file only through a hook Annex D
 // lists, with no other change to an upstream file than the in-place edits
 // Annex D marks. The oracle is the committed tree against the upstream
@@ -87,7 +87,7 @@ function normalisedDiff(file) {
   return raw.split('\n').filter((line) => !line.startsWith('index ')).join('\n');
 }
 
-// [test->proton-install-core~28~6]
+// [test->proton-install-core~28~7]
 test('every changed upstream file\'s diff against 24bd2ac equals its committed fixture, hunk headers and content', () => {
   const violations = [];
   for (const file of ANNEX_D_UPSTREAM_FILES) {
@@ -101,7 +101,7 @@ test('every changed upstream file\'s diff against 24bd2ac equals its committed f
   assert.deepEqual(violations, []);
 });
 
-// [test->proton-install-core~28~6]
+// [test->proton-install-core~28~7]
 test('no upstream file changes outside Annex D\'s own list', () => {
   const violations = [];
   for (const file of changedFiles()) {
@@ -111,7 +111,7 @@ test('no upstream file changes outside Annex D\'s own list', () => {
   assert.deepEqual(violations, []);
 });
 
-// [test->proton-install-core~28~6]
+// [test->proton-install-core~28~7]
 test('no file appears outside Annex D\'s New file rows', () => {
   const violations = [];
   for (const file of changedFiles()) {
