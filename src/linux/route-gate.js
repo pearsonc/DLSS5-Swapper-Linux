@@ -55,26 +55,63 @@ function earlierInstallRoute(exeDir, table) {
   return null;
 }
 
+// A file beside the game's own top level whose first four bytes are the
+// ELF magic number and whose mode carries an execute bit: "the folder's
+// executables" a native Linux game carries, that a Windows .exe carries
+// none of. The first match is enough; which one is not this gate's to name.
+function findElfExecutable(gameDir) {
+  let names;
+  try { names = fs.readdirSync(gameDir, { withFileTypes: true }); } catch { return null; }
+  for (const entry of names) {
+    if (!entry.isFile()) continue;
+    const full = path.join(gameDir, entry.name);
+    let stat;
+    try { stat = fs.statSync(full); } catch { continue; }
+    if (!(stat.mode & 0o111)) continue;
+    let fd;
+    try {
+      fd = fs.openSync(full, 'r');
+      const header = Buffer.alloc(4);
+      fs.readSync(fd, header, 0, 4, 0);
+      if (header.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) return full;
+    } catch {
+      // Unreadable: not a match.
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+  }
+  return null;
+}
+
 // Annex B, "native Linux game": a Steam game that is not a Proton game and
 // whose scan finds no Windows executable. Derived here rather than trusted
-// from a caller, since no call site computes it: a scan carrying neither a
-// chosen executable nor any Windows candidate is native. Absent a scan or a
-// game folder, nothing can be derived and the game is not judged native.
+// from a caller, since no call site computes it, from the game folder's own
+// executables and, where the scan carries one, the Steam manifest's own
+// launch executable: a scan finding no Windows candidate, together with an
+// ELF main binary the folder itself carries or a non-.exe launch executable
+// the manifest names that exists, is native. Absent either corroborating
+// signal, a folder with no Windows executable is left unjudged (null), not
+// refused, so the caller falls through to its own message.
 function deriveNativeLinuxGame(gameDir, scan) {
   if (!gameDir || !scan) return false;
   const hasWindowsExe = Boolean(scan.chosen) || (Array.isArray(scan.exeCandidates) && scan.exeCandidates.length > 0);
-  return !hasWindowsExe;
+  if (hasWindowsExe) return false;
+  if (findElfExecutable(gameDir)) return true;
+  const manifestLaunch = scan.manifestLaunchExecutable;
+  if (manifestLaunch && !/\.exe$/i.test(manifestLaunch) && fs.existsSync(path.join(gameDir, manifestLaunch))) return true;
+  return false;
 }
 
 // Annex A's fourth table: the evidence recorded for a specific refused
 // route/label/bitness triple, or the wildcard row naming none of them for
-// every other pair. Never invents a machine name of its own.
+// every other pair, which Annex A always carries, so there is no case of
+// this gate's own invention left to fall back to.
 function evidenceFor(table, { route, apiLabel, bitness }) {
   const specific = table.find((row) =>
     row.route === route && row.apiLabel === apiLabel && (row.bitness == null || row.bitness === bitness));
   if (specific) return specific.evidence;
   const wildcard = table.find((row) => row.route === null);
-  return wildcard ? wildcard.evidence : 'No evidence gathered on Thor.';
+  return wildcard.evidence;
 }
 
 // Annex B, "a live manifest": manifest.json under the install's backup
@@ -131,6 +168,14 @@ function routeGate(options = {}) {
       message: 'This is a native Linux game; the Proton install routes this app offers do not apply to it.'
     };
   }
+
+  // main.js:1633's own probe, asked before any route is chosen and where
+  // the scan chose no executable: only the native-game verdict applies at
+  // that site. Every other case, including a game whose executable the
+  // scan simply has not resolved yet, falls through to upstream's own
+  // message rather than reaching the dimension checks below with no route
+  // to judge them against.
+  if (route === undefined) return null;
 
   // ~5~5: an unresolved context is named in a job event, and the install
   // carries on placing files; it is never a refusal.

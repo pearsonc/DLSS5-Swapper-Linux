@@ -10,6 +10,15 @@ const { execFileSync } = require('node:child_process');
 const { routeGate } = require('../src/linux/route-gate');
 const { entries, refusedPairs } = require('../src/linux/entries');
 
+// Step 8 remedy C: with Annex A's wildcard row always present, the
+// module's own hard-coded fallback string is dead code once evidenceFor
+// always finds a wildcard; source-level, since no fixture table lacking a
+// wildcard exists anywhere the module is actually called with.
+test('route-gate.js carries no hard-coded evidence fallback string of its own', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'linux', 'route-gate.js'), 'utf8');
+  assert.equal(/No evidence gathered on Thor/.test(source), false);
+});
+
 const root = path.resolve(__dirname, '..');
 
 function temp(t) {
@@ -23,6 +32,16 @@ function gameFixture(t) {
   const exePath = path.join(dir, 'Game.exe');
   fs.writeFileSync(exePath, 'exe');
   return { gameDir: dir, exePath };
+}
+
+// A minimal ELF header, four magic bytes followed by padding, with the
+// executable bit set: exactly what "the folder's executables" a native
+// Linux game carries, and a Windows .exe carries none of.
+function plantElfExecutable(dir, name = 'Game') {
+  const elfPath = path.join(dir, name);
+  fs.writeFileSync(elfPath, Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46]), Buffer.alloc(60)]));
+  fs.chmodSync(elfPath, 0o755);
+  return elfPath;
 }
 
 const PROTON = { prefix: '/pfx', build: '/build' };
@@ -239,12 +258,20 @@ test('the Vulkan Feeder route is refused on Linux, unrelated to any Annex A pair
 // `~7~1`'s native-game verdict is derived by the gate itself from the game
 // folder and the scan it is handed, rather than trusted from a caller.
 // [test->proton-install-core~7~1]
-test('a game whose scan finds no Windows executable is a native Linux game, derived without a caller computing it', (t) => {
+test('a game with an ELF main binary and no Windows executable is a native Linux game, derived without a caller computing it', (t) => {
   const { gameDir, exePath } = gameFixture(t);
+  plantElfExecutable(gameDir);
   const scanWithNoWindowsExe = { chosen: null, exeCandidates: [] };
   const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithNoWindowsExe });
   assert.equal(refusal.ok, false);
   assert.match(refusal.message, /native Linux/i);
+});
+
+test('a game with no Windows executable and no ELF main binary either is not judged native by the gate', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  fs.rmSync(exePath);
+  const scanWithNeither = { chosen: null, exeCandidates: [] };
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithNeither }), null);
 });
 
 test('a game whose scan finds a Windows executable is not treated as a native Linux game', (t) => {
@@ -258,6 +285,24 @@ test('an explicit nativeLinuxGame overrides what the scan would otherwise derive
   const scanWithWindowsExe = { chosen: { path: exePath }, exeCandidates: [{ path: exePath }] };
   const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithWindowsExe, nativeLinuxGame: true });
   assert.equal(refusal.ok, false);
+});
+
+// Step 8 remedy C, `~7~1` open at the app: main.js:1633's own probe, before
+// any route or API is known, `routeGate({ gameDir, scan, log })` — a
+// fixture with an ELF main binary refuses naming it; one with neither an
+// ELF binary nor a Windows executable returns null, so the caller falls
+// through to upstream's own "No game executable found" message rather than
+// reaching the dimension checks with no route to judge.
+// [test->proton-install-core~7~1]
+test('the pre-route probe call refuses an ELF-only game and returns null for neither, without judging any route', (t) => {
+  const elfDir = temp(t);
+  plantElfExecutable(elfDir);
+  const elfRefusal = routeGate({ gameDir: elfDir, scan: { chosen: null, exeCandidates: [] } });
+  assert.equal(elfRefusal.ok, false);
+  assert.match(elfRefusal.message, /native Linux/i);
+
+  const emptyDir = temp(t);
+  assert.equal(routeGate({ gameDir: emptyDir, scan: { chosen: null, exeCandidates: [] } }), null);
 });
 
 // `~5~5`: an unresolved context does not refuse the install; the gate emits

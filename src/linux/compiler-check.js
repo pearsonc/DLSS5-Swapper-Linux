@@ -21,7 +21,7 @@ function compilerCheck(releaseDir, entry = entries[0]) {
       return {
         ok: false,
         code: 'errLinuxReleaseFileMissing',
-        message: `The user's copy of upstream's matching Windows release does not carry ${row.member}, which this install needs.`
+        message: `The release directory ${releaseDir} does not carry ${row.member}, which this install needs.`
       };
     }
   }
