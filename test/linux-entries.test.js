@@ -43,3 +43,37 @@ test('entries.js\'s source_sha256 equals the generated criteria file\'s, so a sp
   const criteriaSha = /source_sha256: ([0-9a-f]{64})/.exec(criteriaText)[1];
   assert.equal(entriesSha, criteriaSha);
 });
+
+// Step 8 remedy A, finding 4-8: Annex A's fourth table, the refused pairs
+// with their evidence, is generated too, so routeGate never falls back to a
+// machine name for evidence it has never gathered.
+// [test->proton-install-core~9~4]
+test('the generator emits Annex A\'s refused-pair table, each row carrying the evidence column verbatim', () => {
+  assert.ok(Array.isArray(entries.refusedPairs), 'entries.js exports refusedPairs');
+  const native = entries.refusedPairs.find((row) => row.route === 'native' && row.apiLabel === 'DirectX 12');
+  assert.ok(native, 'the native/DirectX 12/64-bit refused pair is present');
+  assert.equal(native.bitness, 64);
+  assert.match(native.evidence, /RenoDX|route 1 result/);
+  const dx11 = entries.refusedPairs.find((row) => row.route === 'optiscaler' && row.apiLabel === 'DirectX 11');
+  assert.ok(dx11);
+  assert.match(dx11.evidence, /No evidence gathered on Thor/);
+  const wildcard = entries.refusedPairs.find((row) => row.route === null);
+  assert.ok(wildcard, 'the "every other route and API pair" row is present as the wildcard');
+  assert.match(wildcard.evidence, /No evidence gathered on Thor/);
+});
+
+// Step 8 remedy A, finding 5-4: the eight OptiScaler.ini keys the entry
+// writes after extraction travel as entry.iniKeys, so u3's copy step does
+// not re-derive them from prose.
+// [test->proton-install-core~16~2]
+test('the generator emits the eight OptiScaler.ini keys Annex A names as entry.iniKeys', () => {
+  const entry = entries.entries[0];
+  assert.ok(Array.isArray(entry.iniKeys));
+  assert.equal(entry.iniKeys.length, 8);
+  assert.deepEqual(entry.iniKeys[0], { section: 'DlssNr', key: 'Enabled', value: 'true' });
+  assert.deepEqual(entry.iniKeys[1], { section: 'DlssNr', key: 'ToggleKey', value: '0x78' });
+  assert.deepEqual(entry.iniKeys[3], { section: 'Log', key: 'LogLevel', value: '2' });
+  const targetProcessName = entry.iniKeys.find((row) => row.key === 'TargetProcessName');
+  assert.deepEqual(targetProcessName, { section: 'ProcessFilter', key: 'TargetProcessName', value: null });
+  assert.throws(() => { entry.iniKeys.push({}); }, TypeError, 'iniKeys is deep-frozen with the rest of the entry');
+});

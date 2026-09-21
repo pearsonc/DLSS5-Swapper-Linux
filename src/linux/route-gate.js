@@ -2,7 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { entries: annexAEntries } = require('./entries');
+const { entries: annexAEntries, refusedPairs: annexARefusedPairs } = require('./entries');
+const { unresolvedJobEvent } = require('./proton-context');
 
 // Annex B's launch-options cell: the literal `none`, or one
 // `WINEDLLOVERRIDES=` assignment matching this pattern; anything else,
@@ -54,6 +55,28 @@ function earlierInstallRoute(exeDir, table) {
   return null;
 }
 
+// Annex B, "native Linux game": a Steam game that is not a Proton game and
+// whose scan finds no Windows executable. Derived here rather than trusted
+// from a caller, since no call site computes it: a scan carrying neither a
+// chosen executable nor any Windows candidate is native. Absent a scan or a
+// game folder, nothing can be derived and the game is not judged native.
+function deriveNativeLinuxGame(gameDir, scan) {
+  if (!gameDir || !scan) return false;
+  const hasWindowsExe = Boolean(scan.chosen) || (Array.isArray(scan.exeCandidates) && scan.exeCandidates.length > 0);
+  return !hasWindowsExe;
+}
+
+// Annex A's fourth table: the evidence recorded for a specific refused
+// route/label/bitness triple, or the wildcard row naming none of them for
+// every other pair. Never invents a machine name of its own.
+function evidenceFor(table, { route, apiLabel, bitness }) {
+  const specific = table.find((row) =>
+    row.route === route && row.apiLabel === apiLabel && (row.bitness == null || row.bitness === bitness));
+  if (specific) return specific.evidence;
+  const wildcard = table.find((row) => row.route === null);
+  return wildcard ? wildcard.evidence : 'No evidence gathered on Thor.';
+}
+
 // Annex B, "a live manifest": manifest.json under the install's backup
 // directory, whatever it holds, read by existence. Its route and date are
 // read only to name the refusal; a manifest that fails to parse, or carries
@@ -78,20 +101,28 @@ function liveManifestInfo(gameDir) {
 // main.js:1658-1663, in place of the two inline refusals and the
 // earlier-install refusal. Reads Annex A on every dimension Annex C records
 // for the route surface, the launch-options cell included, per
-// proton-install-core~9~4; refuses a native Linux game per ~7~1; refuses,
-// before the install transaction opens, where the game folder already holds
-// files from an earlier install of any Annex A route (~18~1) and then where
-// the backup directory holds a live manifest (~40~3), in that order, per
-// ADR-014. `entries` is injectable for a test's own fixture table and
-// defaults to Annex A's own entries.
+// proton-install-core~9~4; refuses a native Linux game per ~7~1, derived
+// from `gameDir` and `scan` when the call passes no explicit
+// `nativeLinuxGame`; emits `~5~5`'s job event through `log` for an
+// unresolved Proton context, which does not itself refuse; refuses, before
+// the install transaction opens, where the game folder already holds files
+// from an earlier install of any Annex A route (~18~1) and then where the
+// backup directory holds a live manifest (~40~3), in that order, per
+// ADR-014. `entries` and `refusedPairs` are injectable for a test's own
+// fixture tables and default to Annex A's own.
 function routeGate(options = {}) {
   if (process.platform !== 'linux') return null;
 
   const {
     route, api, apiLabel, bitness, emulator, nativeDlss,
-    gameDir, exePath, proton, nativeLinuxGame,
-    entries: table = annexAEntries
+    gameDir, exePath, proton, scan, log,
+    entries: table = annexAEntries,
+    refusedPairs: refusedTable = annexARefusedPairs
   } = options;
+
+  const nativeLinuxGame = options.nativeLinuxGame !== undefined
+    ? options.nativeLinuxGame
+    : deriveNativeLinuxGame(gameDir, scan);
 
   if (nativeLinuxGame) {
     return {
@@ -101,19 +132,24 @@ function routeGate(options = {}) {
     };
   }
 
-  if (!proton) {
-    return { ok: false, code: 'errProtonRequired', message: 'This installer supports Windows games launched through Steam Proton. Launch the game once with Proton, then try again.' };
+  // ~5~5: an unresolved context is named in a job event, and the install
+  // carries on placing files; it is never a refusal.
+  if (proton && proton.reason && typeof log === 'function') {
+    const event = unresolvedJobEvent(proton);
+    if (event) log(event);
   }
+
   if (api === 'vulkan') {
     return { ok: false, code: 'errLinuxVulkanUnsupported', message: 'The Vulkan Feeder route needs a host Vulkan layer and is not supported on Linux yet. Select a DirectX renderer in the game.' };
   }
 
   const allowed = findAllowedEntry(table, { route, apiLabel, bitness, emulator, nativeDlss });
   if (!allowed) {
+    const evidence = evidenceFor(refusedTable, { route, apiLabel, bitness });
     return {
       ok: false,
       code: 'errLinuxRouteNotAllowed',
-      message: `Route ${route || 'unknown'} with ${apiLabel || api || 'an unknown API'} at ${bitness || 'unknown'}-bit is not offered on Linux. No evidence gathered on Thor.`
+      message: `Route ${route || 'unknown'} with ${apiLabel || api || 'an unknown API'} at ${bitness || 'unknown'}-bit is not offered on Linux. ${evidence}`
     };
   }
   if (!isValidLaunchOptionsCell(allowed.launchOptions)) {
