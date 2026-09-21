@@ -55,12 +55,17 @@ nothing, so a stale load left over from a deleted checkout is safe to leave unti
 of upstream's matching Windows release, beside `nvngx_dlssnr.dll` in the app's payload so
 `~17~2`'s compiler check and the copy step's release-sourced placement row both find it.
 
+The matching Windows release is upstream's `v2.2.7`, the version `package.json` carries at `24bd2ac`: `https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.7/DLSS5-Swapper-2.2.7-portable.exe`, an NSIS self-extractor holding `$PLUGINSDIR/app-64.7z`, which holds `d3dcompiler_47.dll` at its root. Both unpack with `7z` on Linux; the manager did so on 2026-09-21 and the file measured 4,916,728 bytes at SHA-256 `af7b99be1b8770c0e4d18e43b04e81d11bdeb667fa6b07ade7a88f4c5676bf9a`, Annex A's row.
+
 ```bash
+T=$(mktemp -d) && curl -sL -o "$T/portable.exe" https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.7/DLSS5-Swapper-2.2.7-portable.exe \
+  && 7z e -y -o"$T" "$T/portable.exe" '$PLUGINSDIR/app-64.7z' >/dev/null && 7z e -y -o"$T/rel" "$T/app-64.7z" d3dcompiler_47.dll >/dev/null \
+  && sha256sum "$T/rel/d3dcompiler_47.dll"
 find payload -iname nvngx_dlssnr.dll
-cp /path/to/your/windows-release/d3dcompiler_47.dll "$(dirname "$(find payload -iname nvngx_dlssnr.dll | head -1)")/"
+cp "$T/rel/d3dcompiler_47.dll" "$(dirname "$(find payload -iname nvngx_dlssnr.dll | head -1)")/"
 ```
 
-Expect: the `find` command prints one path, typically `payload/streamline/
+Expect: `sha256sum` prints `af7b99be1b8770c0e4d18e43b04e81d11bdeb667fa6b07ade7a88f4c5676bf9a`; the `find` command prints one path, typically `payload/streamline/
 nvngx_dlssnr.dll`; after the `cp`, `ls "$(dirname ...)"` lists `d3dcompiler_47.dll` beside it.
 
 If not: `find` prints nothing because the payload has not been fetched yet; that is a
