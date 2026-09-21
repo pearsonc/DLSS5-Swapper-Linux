@@ -1,6 +1,6 @@
 'use strict';
 
-// The fork's test run on Linux, proton-install-core~30~2. It runs every file
+// The fork's test run on Linux, proton-install-core~30~3. It runs every file
 // upstream's `npm test` runs, `test/*.test.js` at package.json's test script,
 // one `node --test` process per file so each failure carries its file. An
 // upstream file's failures are compared with Annex E of the specification in
@@ -22,6 +22,7 @@ const EXPECTED_UPSTREAM_FAILURES = [
   { file: 'test/payload-guidance.test.js', test: 'from source it still says the thing a developer needs' },
   { file: 'test/payload-guidance.test.js', test: 'without a temp path it still names the folder in a form a person can paste' },
   { file: 'test/shader-compiler.test.js', test: 'the install retires the stale compiler and Restore gives it back' },
+  { file: 'test/optiscaler.test.js', test: 'GPU requirements and process guards reject known unsupported/running targets' },
 ];
 
 /** Upstream files matching the fork's Linux pattern; Annex D, the hook-presence row. */

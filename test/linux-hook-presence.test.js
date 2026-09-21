@@ -28,7 +28,11 @@ const HOOKS = [
   { hook: 'Case-aware targets', file: 'src/core/scan.js', literal: 'linux.caseAwareTarget(', sites: 1 },
   { hook: 'Case-aware targets', file: 'src/core/compatibility.js', literal: 'linux.caseAwareTarget(', sites: 1 },
   { hook: 'File modes', file: 'src/core/apply.js', literal: 'linux.fileMode(', sites: 2 },
-  { hook: 'Linux test run', file: 'package.json', literal: '"test:linux": "node scripts/test-linux.js"', sites: 1 }
+  { hook: 'Linux test run', file: 'package.json', literal: '"test:linux": "node scripts/test-linux.js"', sites: 1 },
+  // [test->proton-install-core~28~7]
+  { hook: 'Running-game call sites', file: 'main.js', literal: 'assertGameClosed(dir, target.path, undefined, undefined, send)', sites: 2 },
+  // [test->proton-install-core~28~7]
+  { hook: 'Running-game call sites', file: 'main.js', literal: 'assertGameClosed(dir, exe, undefined, undefined, send)', sites: 1 }
 ];
 
 // A literal on a line whose trimmed text begins `//` or `*` counts as
