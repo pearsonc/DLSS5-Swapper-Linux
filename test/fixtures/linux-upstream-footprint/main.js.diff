@@ -3,7 +3,7 @@ diff --git a/main.js b/main.js
 +++ b/main.js
 @@ -44,0 +45 @@ const { AdminVault } = require('./src/admin-vault');
 +const linux = require('./src/linux');
-@@ -1657,7 +1658,2 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+@@ -1657,8 +1658 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 -  const proton = contextForSteamGame(protonGame);
 -  if (process.platform === 'linux' && !proton) {
 -    return { ok: false, code: 'errProtonRequired', message: 'This installer supports Windows games launched through Steam Proton. Launch the game once with Proton, then try again.' };
@@ -11,17 +11,19 @@ diff --git a/main.js b/main.js
 -  if (process.platform === 'linux' && api === 'vulkan') {
 -    return { ok: false, code: 'errLinuxVulkanUnsupported', message: 'The Vulkan Feeder route needs a host Vulkan layer and is not supported on Linux yet. Select a DirectX renderer in the game.' };
 -  }
+-
 +  const proton = linux.protonContext(contextForSteamGame, protonGame);
-+  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton }); if (refused) return refused;
-@@ -1666 +1662 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+@@ -1666 +1660,3 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 -  await guards.assertGameClosed(dir, target.path);
++  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton, scan, log: send }); if (refused) return refused;
++
 +  await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
 @@ -1718,2 +1714 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 -    const release = optiscaler.releaseFor(wanted);
 -    try { optiRoot = await optiscaler.ensureOptiScaler(app.getPath('userData'), release.version); }
-+    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), release); }
++    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), process.platform === 'linux' ? route : release, undefined, undefined, send); }
 @@ -1756,0 +1752 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
-+  const compilerRefusal = await linux.compilerCheck(optiRoot); if (compilerRefusal) return compilerRefusal;
++  const compilerRefusal = await linux.compilerCheck(p.source.dir); if (compilerRefusal) return compilerRefusal;
 @@ -1812 +1808 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 -    await guards.assertGameClosed(dir, target.path);
 +    await guards.assertGameClosed(dir, target.path, undefined, undefined, send);

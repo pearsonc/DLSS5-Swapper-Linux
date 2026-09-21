@@ -3,6 +3,28 @@ diff --git a/src/core/backend-manager.js b/src/core/backend-manager.js
 +++ b/src/core/backend-manager.js
 @@ -10,0 +11 @@ const compatibility = require('./compatibility');
 +const linux = require('../linux');
-@@ -130 +131 @@ async function install(config, log = () => {}) {
+@@ -130 +131,23 @@ async function install(config, log = () => {}) {
 -    if (config.route === 'optiscaler') manifest = await optiscaler.install({ ...config, profile }, log);
-+    if (config.route === 'optiscaler') manifest = await linux.installEntry({ ...config, profile, ensuredRoot: config.optiRoot, log });
++    if (config.route === 'optiscaler') {
++      // On Linux the copy step needs what upstream's own passthrough never
++      // carried: the entry selected by route, a manifest begun the same way
++      // upstream begins one, the release directory the compiler check named,
++      // the barrel's own running-game guard bound with this job's log, and
++      // upstream's journal-captured tracked copy so every placement is
++      // written, backed up and recorded (proton-install-core~28~8's Linux
++      // entry install row). Off Linux none of this is added: the hook stays
++      // a byte-identical passthrough to upstream's own call
++      // (proton-install-core~31~6).
++      const linuxExtras = process.platform === 'linux' ? {
++        entry: require('../linux/entries').entryFor(config.route),
++        manifest: (() => {
++          const begun = core.beginManifest(config.gameDir, config.exePath, config.api);
++          begun.route = config.route;
++          return begun;
++        })(),
++        releaseDir: config.source && config.source.dir,
++        guard: () => linux.assertGameClosed(() => [], config.gameDir, config.exePath, undefined, undefined, log),
++        placeTracked: core.copyTracked
++      } : {};
++      manifest = await linux.installEntry({ ...config, profile, ensuredRoot: config.optiRoot, log, ...linuxExtras });
++    }
