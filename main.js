@@ -1659,7 +1659,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton }); if (refused) return refused;
 
   const send = (e) => event.sender.send('job', e);
-  await guards.assertGameClosed(dir, target.path);
+  await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
   if (fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errBackendRecovery' };
   const old = backends.readManifest(dir);
   const changed = old && (old.route !== route || old.game.api !== api || old.game.exe.toLowerCase() !== target.rel.toLowerCase());
@@ -1805,7 +1805,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 
   try {
     // A game could have been launched while the component download ran.
-    await guards.assertGameClosed(dir, target.path);
+    await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
     // Preserve the previous snapshot before a repeat install changes it.
     history().list([{ dir, name: gameName(dir) }], error => send({ code: 'historySaveWarning', params: { error: error.message } }));
     const manifest = await backends.install({
@@ -1874,7 +1874,7 @@ ipcMain.handle('restore', (event, dir) => exclusiveMutation(async () => {
     // A missing/updated/unrecognised executable must not strand our hooks.
     if (!old && !fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errNoBackup' };
     const exe = old ? journal.safePath(dir, old.game.exe) : null;
-    await guards.assertGameClosed(dir, exe);
+    await guards.assertGameClosed(dir, exe, undefined, undefined, send);
     history().list([{ dir, name: gameName(dir) }], error => send({ code: 'historySaveWarning', params: { error: error.message } }));
     if (!await backends.restore(dir, send)) return { ok: false, code: 'errNoBackup' };
     saveOperation(dir, restoredManifest || {}, restoredManifest ? 'restore' : 'recovery', send);

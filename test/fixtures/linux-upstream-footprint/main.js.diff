@@ -13,9 +13,18 @@ diff --git a/main.js b/main.js
 -  }
 +  const proton = linux.protonContext(contextForSteamGame, protonGame);
 +  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton }); if (refused) return refused;
+@@ -1666 +1662 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-  await guards.assertGameClosed(dir, target.path);
++  await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
 @@ -1718,2 +1714 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 -    const release = optiscaler.releaseFor(wanted);
 -    try { optiRoot = await optiscaler.ensureOptiScaler(app.getPath('userData'), release.version); }
 +    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), release); }
 @@ -1756,0 +1752 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 +  const compilerRefusal = await linux.compilerCheck(optiRoot); if (compilerRefusal) return compilerRefusal;
+@@ -1812 +1808 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-    await guards.assertGameClosed(dir, target.path);
++    await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
+@@ -1881 +1877 @@ ipcMain.handle('restore', (event, dir) => exclusiveMutation(async () => {
+-    await guards.assertGameClosed(dir, exe);
++    await guards.assertGameClosed(dir, exe, undefined, undefined, send);
