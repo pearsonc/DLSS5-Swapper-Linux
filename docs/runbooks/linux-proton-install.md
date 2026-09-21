@@ -61,6 +61,7 @@ The matching Windows release is upstream's `v2.2.7`, the version `package.json` 
 T=$(mktemp -d) && curl -sL -o "$T/portable.exe" https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.7/DLSS5-Swapper-2.2.7-portable.exe \
   && 7z e -y -o"$T" "$T/portable.exe" '$PLUGINSDIR/app-64.7z' >/dev/null && 7z e -y -o"$T/rel" "$T/app-64.7z" d3dcompiler_47.dll >/dev/null \
   && sha256sum "$T/rel/d3dcompiler_47.dll"
+[ -e payload ] || 7z x -y -o"$T/relpayload" "$T/app-64.7z" resources/payload >/dev/null && [ -e payload ] || cp -a "$T/relpayload/resources/payload" payload
 find payload -iname nvngx_dlssnr.dll
 cp "$T/rel/d3dcompiler_47.dll" "$(dirname "$(find payload -iname nvngx_dlssnr.dll | head -1)")/"
 ```
@@ -68,9 +69,9 @@ cp "$T/rel/d3dcompiler_47.dll" "$(dirname "$(find payload -iname nvngx_dlssnr.dl
 Expect: `sha256sum` prints `af7b99be1b8770c0e4d18e43b04e81d11bdeb667fa6b07ade7a88f4c5676bf9a`; the `find` command prints one path, typically `payload/streamline/
 nvngx_dlssnr.dll`; after the `cp`, `ls "$(dirname ...)"` lists `d3dcompiler_47.dll` beside it.
 
-If not: `find` prints nothing because the payload has not been fetched yet; that is a
-separate, upstream step (the app ships a payload directory beside `main.js` from source, or
-under the packaged app's resources), not something this runbook or `~16~3` covers. Once the
+From source the app reads `payload/` beside `main.js`, which `npm run payload` assembles from NVIDIA's DLSS files and pinned components; a checkout that has never run it has no `payload/`, so the command above unpacks the release's shipped `resources/payload/` (streamline, feeder, the ReShade add-on set, 256 MB) into it, the same files the published build carries. The manager did this on Thor on 2026-09-21 and the app's own `scanSource` printed `ok: true, hasNeuralRendering: true, payload: 11` over it.
+
+If not: `find` prints nothing because the unpack step was skipped; once the
 payload exists, a `cp` that reports nothing but leaves the file missing means the destination
 directory itself does not exist yet; `mkdir -p` it first.
 
