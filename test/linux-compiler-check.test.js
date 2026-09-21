@@ -40,6 +40,7 @@ test('a fixture release directory with a named file absent refuses before any wr
   const refusal = compilerCheck(dir, entry);
   assert.equal(refusal.ok, false);
   assert.match(refusal.message, new RegExp(releaseRows[0].member.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.ok(refusal.message.includes(dir), 'the refusal names the directory it looked in');
   assert.deepEqual(fs.readdirSync(dir).sort(), before, 'no file was written by the refusal');
 });
 
