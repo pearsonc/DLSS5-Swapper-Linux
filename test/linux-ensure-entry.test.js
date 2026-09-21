@@ -10,6 +10,7 @@ const { mock } = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 Object.defineProperty(process, 'platform', { value: 'linux' });
 
@@ -67,6 +68,14 @@ function readFixture(name) {
   return fs.readFileSync(path.join(fixturesDir, name));
 }
 
+// The shim fixtures below delegate to the host's real `7z` for honest
+// extraction; resolved from the unmodified PATH before a shim directory is
+// ever prepended, so a host whose `7z` lives outside /usr/bin still runs
+// the real binary rather than failing with the wrong reason.
+function resolveRealSevenZip() {
+  return execFileSync('sh', ['-c', 'command -v 7z']).toString().trim();
+}
+
 function fetchersFor(entry, archiveBuffer, licenceBuffer, onDraw) {
   const licenceRow = entry.placement.find((row) => /^https?:\/\//.test(row.source));
   return routingFetcher({
@@ -74,6 +83,44 @@ function fetchersFor(entry, archiveBuffer, licenceBuffer, onDraw) {
     ...(licenceRow ? { [licenceRow.source]: bufferFetcher(licenceBuffer, 4096, onDraw) } : {})
   });
 }
+
+// --- proton-install-core~10~7: ensureEntry selects Annex A's entry through entries.entryFor when handed a route ---
+
+// [test->proton-install-core~10~7]
+test('a route string resolves through entries.entryFor and reaches the fetch pipeline', async () => {
+  const { entryFor } = require('../src/linux/entries');
+  const realEntry = entryFor('optiscaler');
+  const cacheRoot = tmpDir('u8-route-');
+  const fetcher = () => (async function* () { yield Buffer.from('not the real archive'); })();
+  await assert.rejects(
+    () => ensureEntry(cacheRoot, 'optiscaler', fetcher, 5000),
+    (err) => {
+      // errLinuxFetchChecksum, not errLinuxEntryUnresolved, proves the route
+      // string was resolved to the real Annex A entry (whose url the fetcher
+      // above was reached for) before the checksum ever mismatched.
+      assert.equal(err.code, 'errLinuxFetchChecksum');
+      assert.match(err.message, new RegExp(realEntry.archive.replace('.', '\\.')));
+      return true;
+    }
+  );
+  fs.rmSync(cacheRoot, { recursive: true, force: true });
+});
+
+// [test->proton-install-core~10~7]
+test('a value that is neither a known route nor an entry carrying placement refuses naming it', async () => {
+  const cacheRoot = tmpDir('u8-badroute-');
+  const fetcher = counting(() => { throw new Error('must not be called'); });
+  await assert.rejects(
+    () => ensureEntry(cacheRoot, 'not-a-real-route', fetcher, 5000),
+    (err) => {
+      assert.equal(err.code, 'errLinuxEntryUnresolved');
+      assert.match(err.message, /not-a-real-route/);
+      return true;
+    }
+  );
+  assert.equal(fetcher.calls.length, 0);
+  fs.rmSync(cacheRoot, { recursive: true, force: true });
+});
 
 // --- proton-install-core~32~1: no `7z` on PATH refuses before any fetch or write ---
 
@@ -137,22 +184,9 @@ test('a shim 7z first on PATH writing wrong bytes under a listed name refuses na
   const shim = path.join(shimDir, '7z');
   fs.writeFileSync(shim, [
     '#!/bin/sh',
-    'dir=""',
-    'archive=""',
-    'seen_archive=0',
-    'members=""',
-    'for arg in "$@"; do',
-    '  case "$arg" in',
-    '    -o*) dir="${arg#-o}"; continue ;;',
-    '    -*) continue ;;',
-    '  esac',
-    '  if [ "$seen_archive" -eq 0 ]; then archive="$arg"; seen_archive=1; continue; fi',
-    '  members="$members $arg"',
-    'done',
-    'for m in $members; do',
-    '  mkdir -p "$dir/$(dirname "$m")"',
-    '  printf "wrong bytes from shim 7z\\n" > "$dir/$m"',
-    'done',
+    'dir=""; archive=""; seen_archive=0; members=""',
+    'for arg in "$@"; do case "$arg" in -o*) dir="${arg#-o}"; continue ;; -*) continue ;; esac; if [ "$seen_archive" -eq 0 ]; then archive="$arg"; seen_archive=1; continue; fi; members="$members $arg"; done',
+    'for m in $members; do mkdir -p "$dir/$(dirname "$m")"; printf "wrong bytes from shim 7z\\n" > "$dir/$m"; done',
     'exit 0'
   ].join('\n') + '\n');
   fs.chmodSync(shim, 0o755);
@@ -176,18 +210,12 @@ test('a shim 7z first on PATH that extracts an unlisted member refuses naming it
   const cacheRoot = tmpDir('u8-unlisted-');
   const shimDir = tmpDir('u8-shimbin2-');
   const shim = path.join(shimDir, '7z');
-  const realSevenZip = '/usr/bin/7z';
+  const realSevenZip = resolveRealSevenZip();
   fs.writeFileSync(shim, [
     '#!/bin/sh',
     `"${realSevenZip}" "$@"`,
-    'dir=""',
-    'for arg in "$@"; do',
-    '  case "$arg" in',
-    '    -o*) dir="${arg#-o}" ;;',
-    '  esac',
-    'done',
-    'mkdir -p "$dir/OptiScaler"',
-    'printf "unlisted extra bytes\\n" > "$dir/OptiScaler/EXTRA-UNLISTED.dll"',
+    'dir=""; for arg in "$@"; do case "$arg" in -o*) dir="${arg#-o}" ;; esac; done',
+    'mkdir -p "$dir/OptiScaler"; printf "unlisted extra bytes\\n" > "$dir/OptiScaler/EXTRA-UNLISTED.dll"',
     'exit 0'
   ].join('\n') + '\n');
   fs.chmodSync(shim, 0o755);
@@ -199,6 +227,29 @@ test('a shim 7z first on PATH that extracts an unlisted member refuses naming it
     (err) => {
       assert.equal(err.code, 'errLinuxMemberUnexpected');
       assert.match(err.message, /OptiScaler\/EXTRA-UNLISTED\.dll/);
+      return true;
+    }
+  );
+  fs.rmSync(cacheRoot, { recursive: true, force: true });
+  fs.rmSync(shimDir, { recursive: true, force: true });
+});
+
+// [test->proton-install-core~10~7]
+test('a 7z that exits non-zero refuses naming the extractor and its exit status', async () => {
+  const cacheRoot = tmpDir('u8-exitstatus-');
+  const shimDir = tmpDir('u8-shimbin3-');
+  const shim = path.join(shimDir, '7z');
+  fs.writeFileSync(shim, ['#!/bin/sh', 'exit 2'].join('\n') + '\n');
+  fs.chmodSync(shim, 0o755);
+  usePath(shimDir);
+  const entry = cloneEntry();
+  const fetcher = fetchersFor(entry, readFixture('archive-control.7z'), readFixture('licence.txt'));
+  await assert.rejects(
+    () => ensureEntry(cacheRoot, entry, fetcher, 5000),
+    (err) => {
+      assert.equal(err.code, 'errLinuxExtractorFailed');
+      assert.match(err.message, /7z/);
+      assert.equal(err.params.status, 2);
       return true;
     }
   );
@@ -317,6 +368,34 @@ test('a cached body of another checksum is fetched again exactly once and replac
 });
 
 // [test->proton-install-core~33~3]
+test('a cached body of another checksum is emitted through log with its digest, not console.warn', async () => {
+  const cacheRoot = tmpDir('u8-cachelog-');
+  const entry = cloneEntry();
+  const archiveFile = path.join(cacheRoot, 'linux-entries', entry.id, entry.archive);
+  fs.mkdirSync(path.dirname(archiveFile), { recursive: true });
+  const staleBody = Buffer.alloc(10, 1);
+  fs.writeFileSync(archiveFile, staleBody); // stale, wrong digest
+  const staleDigest = require('crypto').createHash('sha256').update(staleBody).digest('hex');
+  const fetcher = fetchersFor(entry, readFixture('archive-control.7z'), readFixture('licence.txt'));
+  const events = [];
+  const originalWarn = console.warn;
+  let warnCalled = false;
+  console.warn = (...args) => { warnCalled = true; originalWarn(...args); };
+  try {
+    await ensureEntry(cacheRoot, entry, fetcher, 5000, (event) => events.push(event));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnCalled, false, 'console.warn is never used for the cache mismatch');
+  const mismatch = events.find((e) => e.code === 'linux-cache-mismatch');
+  assert.ok(mismatch, 'a linux-cache-mismatch event was emitted through log');
+  assert.equal(mismatch.params.file, archiveFile);
+  assert.equal(mismatch.params.held, staleDigest);
+  assert.equal(mismatch.params.expected, entry.sha256);
+  fs.rmSync(cacheRoot, { recursive: true, force: true });
+});
+
+// [test->proton-install-core~33~3]
 test('a stale cache whose re-fetch also mismatches is refused once', async () => {
   const cacheRoot = tmpDir('u8-stalecache2-');
   const entry = cloneEntry();
@@ -378,6 +457,35 @@ test('the default fetcher carries a 120-second whole-request deadline', async ()
     for (let i = 0; i < 10; i += 1) await Promise.resolve();
     mock.timers.tick(120000);
     await assertion;
+  } finally {
+    mock.timers.reset();
+    global.fetch = originalFetch;
+    fs.rmSync(cacheRoot, { recursive: true, force: true });
+  }
+});
+
+// [test->proton-install-core~33~3]
+test('the default fetcher aborts its own fetch once the deadline passes', async () => {
+  const cacheRoot = tmpDir('u8-abort-');
+  const entry = cloneEntry();
+  let capturedSignal = null;
+  const originalFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    capturedSignal = opts && opts.signal;
+    return new Promise(() => {}); // never resolves: only the abort is observable
+  };
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  try {
+    const promise = ensureEntry(cacheRoot, entry, undefined, 50);
+    const assertion = assert.rejects(() => promise, (err) => {
+      assert.equal(err.code, 'errLinuxFetchDeadline');
+      return true;
+    });
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    mock.timers.tick(50);
+    await assertion;
+    assert.ok(capturedSignal, 'fetch was called with an AbortSignal');
+    assert.equal(capturedSignal.aborted, true, 'the signal aborts once the deadline passes');
   } finally {
     mock.timers.reset();
     global.fetch = originalFetch;
