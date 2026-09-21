@@ -1,0 +1,329 @@
+'use strict';
+// proton-install-core~7~1, ~9~4, ~18~1, ~40~3: the Linux route gate.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+
+const { routeGate } = require('../src/linux/route-gate');
+const { entries, refusedPairs } = require('../src/linux/entries');
+
+// Step 8 remedy C: with Annex A's wildcard row always present, the
+// module's own hard-coded fallback string is dead code once evidenceFor
+// always finds a wildcard; source-level, since no fixture table lacking a
+// wildcard exists anywhere the module is actually called with.
+test('route-gate.js carries no hard-coded evidence fallback string of its own', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'linux', 'route-gate.js'), 'utf8');
+  assert.equal(/No evidence gathered on Thor/.test(source), false);
+});
+
+const root = path.resolve(__dirname, '..');
+
+function temp(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swapper-route-gate-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+function gameFixture(t) {
+  const dir = temp(t);
+  const exePath = path.join(dir, 'Game.exe');
+  fs.writeFileSync(exePath, 'exe');
+  return { gameDir: dir, exePath };
+}
+
+// A minimal ELF header, four magic bytes followed by padding, with the
+// executable bit set: exactly what "the folder's executables" a native
+// Linux game carries, and a Windows .exe carries none of.
+function plantElfExecutable(dir, name = 'Game') {
+  const elfPath = path.join(dir, name);
+  fs.writeFileSync(elfPath, Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46]), Buffer.alloc(60)]));
+  fs.chmodSync(elfPath, 0o755);
+  return elfPath;
+}
+
+const PROTON = { prefix: '/pfx', build: '/build' };
+const A1_PAIR = { route: 'optiscaler', api: 'dxgi', apiLabel: 'DirectX 12', bitness: 64, emulator: null, nativeDlss: true };
+
+// Annex C: the route surface's dimensions are derived from the same files
+// its commands enumerate, so the allowlist read reaches a verdict for every
+// member of each set rather than only for the one pair Annex A lists.
+// [test->proton-install-core~9~4]
+test('every route backend-manager.js validates, and every API scan.js can return, reaches a verdict from the gate', (t) => {
+  const routeList = JSON.parse(
+    execFileSync('grep', ['-n', "includes(route)", path.join(root, 'src/core/backend-manager.js')], { encoding: 'utf8' })
+      .match(/\[([^\]]+)\]/)[1]
+      .replace(/'/g, '"')
+      .replace(/^/, '[').replace(/$/, ']')
+  );
+  const apiList = execFileSync('bash', ['-c', `grep -ohE "api: '[a-z0-9]+'" ${path.join(root, 'src/core/scan.js')} | sort -u`], { encoding: 'utf8' })
+    .trim().split('\n').map((l) => l.match(/'([a-z0-9]+)'/)[1]);
+  assert.deepEqual(routeList, ['native', 'feeder', 'optiscaler', 'renodx']);
+  assert.deepEqual(apiList, ['d3d10', 'd3d8', 'd3d9', 'ddraw', 'dxgi', 'opengl', 'vulkan']);
+  const { gameDir, exePath } = gameFixture(t);
+  for (const route of routeList) {
+    for (const api of apiList) {
+      const result = routeGate({ route, api, apiLabel: 'DirectX 12', bitness: 64, emulator: null, nativeDlss: true, proton: PROTON, gameDir, exePath });
+      assert.ok(result === null || (result && result.ok === false), `route ${route}, api ${api} must reach a verdict`);
+    }
+  }
+});
+
+// A new API string is refused, not admitted by default: a denylist would let
+// it through, an allowlist against Annex A cannot.
+// [test->proton-install-core~9~4]
+test('an API string absent from Annex A is refused, not admitted by default', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const refusal = routeGate({ ...A1_PAIR, api: 'someFutureApi', apiLabel: 'Some Future API', proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+});
+
+// Step 8 remedy A, finding 4-8: the evidence a refusal names is table four's
+// own recorded text, generated from Annex A, never a machine-invented
+// fallback string route-gate.js carries itself.
+// [test->proton-install-core~9~4]
+test('a refused pair names the evidence Annex A\'s refused-pair table records for it', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const nativeRefusal = routeGate({ route: 'native', api: 'dxgi', apiLabel: 'DirectX 12', bitness: 64, emulator: null, nativeDlss: true, proton: PROTON, gameDir, exePath });
+  assert.equal(nativeRefusal.ok, false);
+  const nativeEvidence = refusedPairs.find((row) => row.route === 'native' && row.apiLabel === 'DirectX 12').evidence;
+  assert.match(nativeRefusal.message, /RenoDX v4\.7 pin|EXCEPTION_ACCESS_VIOLATION/, 'the message carries the recorded evidence, not a generic string');
+  assert.ok(nativeRefusal.message.includes(nativeEvidence), 'the exact recorded evidence text appears in the refusal');
+
+  const wildcardRefusal = routeGate({ ...A1_PAIR, api: 'someFutureApi', apiLabel: 'Some Future API', proton: PROTON, gameDir, exePath });
+  const wildcardEvidence = refusedPairs.find((row) => row.route === null).evidence;
+  assert.ok(wildcardRefusal.message.includes(wildcardEvidence));
+});
+
+// The exact pair Annex A lists is admitted.
+// [test->proton-install-core~9~4]
+test('the exact pair Annex A lists as allowed is admitted', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath }), null);
+});
+
+// ADR-006: the gate reads the label in force after any per-executable
+// override, not the detected label alone, so an ambiguous or overridden
+// label is judged by what it resolves to.
+// [test->proton-install-core~9~4]
+test('a game overridden to the label Annex A lists installs; the ambiguous detected label alone does not', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  assert.equal(routeGate({ ...A1_PAIR, apiLabel: 'DirectX 12', proton: PROTON, gameDir, exePath }), null);
+  const refusal = routeGate({ ...A1_PAIR, apiLabel: 'DirectX 11/12', proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+});
+
+// [test->proton-install-core~9~4]
+test('a 32-bit pair otherwise matching Annex A is refused', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const refusal = routeGate({ ...A1_PAIR, bitness: 32, proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /32/);
+});
+
+// [test->proton-install-core~9~4]
+test('an emulator target otherwise matching Annex A is refused, whatever its API', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const refusal = routeGate({ ...A1_PAIR, emulator: 'RPCS3', proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+});
+
+// [test->proton-install-core~9~4]
+test('a game with no native DLSS present, matching Annex A on every other dimension, is refused', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const refusal = routeGate({ ...A1_PAIR, nativeDlss: false, proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+});
+
+// Annex B's launch-options cell: the fixture entry table carries an empty
+// cell and a malformed one, so the gate's own regexp is exercised directly
+// rather than only through the one cell Annex A records today.
+// [test->proton-install-core~9~4]
+test('an entry whose launch-options cell is empty or malformed is refused, naming the cell and the pattern', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const base = entries[0];
+  for (const launchOptions of ['', 'WINEDLLOVERRIDES=dxgi=n,b', 'not this at all']) {
+    const fixtureEntries = [{ ...base, launchOptions }];
+    const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, entries: fixtureEntries });
+    assert.equal(refusal.ok, false, `cell ${JSON.stringify(launchOptions)} must refuse`);
+    assert.match(refusal.message, /WINEDLLOVERRIDES/, `cell ${JSON.stringify(launchOptions)} names the pattern`);
+  }
+  // A cell of `none` and a syntactically valid override both pass the cell
+  // check, so the fixture entry with a valid override still installs.
+  const validOverride = 'WINEDLLOVERRIDES="dxgi=n,b;d3dcompiler_47=n"';
+  const fixtureEntries = [{ ...base, launchOptions: validOverride }];
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, entries: fixtureEntries }), null);
+});
+
+// [test->proton-install-core~7~1]
+test('a native Linux game is refused as such', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, nativeLinuxGame: true });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /native Linux/i);
+});
+
+// [test->proton-install-core~18~1]
+test('OptiScaler.ini alone in the game folder refuses, naming the route it found, before any write', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  fs.writeFileSync(path.join(gameDir, 'OptiScaler.ini'), 'old');
+  const before = fs.readdirSync(gameDir).sort();
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /optiscaler/);
+  assert.deepEqual(fs.readdirSync(gameDir).sort(), before);
+});
+
+// [test->proton-install-core~18~1]
+test('dxgi.dll together with nvngx.dll_dlssnr.dll refuses, naming the route it found', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  fs.writeFileSync(path.join(gameDir, 'dxgi.dll'), 'old');
+  fs.writeFileSync(path.join(gameDir, 'nvngx.dll_dlssnr.dll'), 'old');
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /optiscaler/);
+});
+
+// nvngx_dlssnr.dll alone is upstream's kept model, per Annex B, and does not
+// count as a file from an earlier install.
+// [test->proton-install-core~18~1]
+test('nvngx_dlssnr.dll alone, upstream\'s kept model, proceeds', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  fs.writeFileSync(path.join(gameDir, 'nvngx_dlssnr.dll'), 'kept');
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath }), null);
+});
+
+// [test->proton-install-core~40~3]
+test('a manifest.json under the backup directory refuses before the transaction opens, naming its route and date', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const backupDir = path.join(gameDir, '_DLSS5_Backup');
+  fs.mkdirSync(backupDir, { recursive: true });
+  fs.writeFileSync(path.join(backupDir, 'manifest.json'), JSON.stringify({ route: 'optiscaler', date: '2026-09-01T00:00:00.000Z' }));
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /optiscaler/);
+  assert.match(refusal.message, /2026-09-01/);
+});
+
+// A manifest that carries neither a route nor a date is named as such.
+// [test->proton-install-core~40~3]
+test('a manifest.json carrying neither a route nor a date refuses, naming that it carries neither', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const backupDir = path.join(gameDir, '_DLSS5_Backup');
+  fs.mkdirSync(backupDir, { recursive: true });
+  fs.writeFileSync(path.join(backupDir, 'manifest.json'), '{}');
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /neither/);
+});
+
+// A .done-<timestamp> file alone, with no manifest.json present, is a
+// retired manifest per Annex B: it proceeds.
+// [test->proton-install-core~40~3]
+test('a .done-* file alone under the backup directory, no manifest.json present, proceeds', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const backupDir = path.join(gameDir, '_DLSS5_Backup');
+  fs.mkdirSync(backupDir, { recursive: true });
+  fs.writeFileSync(path.join(backupDir, 'manifest.json.done-1758000000000'), JSON.stringify({ route: 'optiscaler', date: '2026-09-01T00:00:00.000Z' }));
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath }), null);
+});
+
+// Existing wave-1 behaviour, kept: off Linux the gate always admits, and on
+// Linux a game with no resolved Proton context, or the Vulkan API, still
+// refuses as before.
+// [test->proton-install-core~31~6]
+test('off Linux the gate always admits', (t) => {
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  try {
+    const { gameDir, exePath } = gameFixture(t);
+    assert.equal(routeGate({ ...A1_PAIR, proton: null, gameDir, exePath }), null);
+  } finally {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  }
+});
+
+test('the Vulkan Feeder route is refused on Linux, unrelated to any Annex A pair', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const refusal = routeGate({ ...A1_PAIR, api: 'vulkan', proton: PROTON, gameDir, exePath });
+  assert.equal(refusal.ok, false);
+  assert.equal(refusal.code, 'errLinuxVulkanUnsupported');
+});
+
+// Step 8 remedy A, findings 4-3, 3-2, 7-2, 2-2: `~5~5` names carrying on
+// placing files while a resolved context's own reason is only logged, so an
+// unresolved context is not a refusal; `protonContext` returns an object for
+// every game, so the dead `!proton` branch and its test are retired, and
+// `~7~1`'s native-game verdict is derived by the gate itself from the game
+// folder and the scan it is handed, rather than trusted from a caller.
+// [test->proton-install-core~7~1]
+test('a game with an ELF main binary and no Windows executable is a native Linux game, derived without a caller computing it', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  plantElfExecutable(gameDir);
+  const scanWithNoWindowsExe = { chosen: null, exeCandidates: [] };
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithNoWindowsExe });
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.message, /native Linux/i);
+});
+
+test('a game with no Windows executable and no ELF main binary either is not judged native by the gate', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  fs.rmSync(exePath);
+  const scanWithNeither = { chosen: null, exeCandidates: [] };
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithNeither }), null);
+});
+
+test('a game whose scan finds a Windows executable is not treated as a native Linux game', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const scanWithWindowsExe = { chosen: { path: exePath }, exeCandidates: [{ path: exePath }] };
+  assert.equal(routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithWindowsExe }), null);
+});
+
+test('an explicit nativeLinuxGame overrides what the scan would otherwise derive', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const scanWithWindowsExe = { chosen: { path: exePath }, exeCandidates: [{ path: exePath }] };
+  const refusal = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, scan: scanWithWindowsExe, nativeLinuxGame: true });
+  assert.equal(refusal.ok, false);
+});
+
+// Step 8 remedy C, `~7~1` open at the app: main.js:1633's own probe, before
+// any route or API is known, `routeGate({ gameDir, scan, log })` — a
+// fixture with an ELF main binary refuses naming it; one with neither an
+// ELF binary nor a Windows executable returns null, so the caller falls
+// through to upstream's own "No game executable found" message rather than
+// reaching the dimension checks with no route to judge.
+// [test->proton-install-core~7~1]
+test('the pre-route probe call refuses an ELF-only game and returns null for neither, without judging any route', (t) => {
+  const elfDir = temp(t);
+  plantElfExecutable(elfDir);
+  const elfRefusal = routeGate({ gameDir: elfDir, scan: { chosen: null, exeCandidates: [] } });
+  assert.equal(elfRefusal.ok, false);
+  assert.match(elfRefusal.message, /native Linux/i);
+
+  const emptyDir = temp(t);
+  assert.equal(routeGate({ gameDir: emptyDir, scan: { chosen: null, exeCandidates: [] } }), null);
+});
+
+// `~5~5`: an unresolved context does not refuse the install; the gate emits
+// the job event proton-context.js's unresolvedJobEvent names, through its
+// log option, and carries on to admit the pair.
+// [test->proton-install-core~9~4]
+test('a context carrying an unresolved reason emits the job event through log and still admits the pair', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const events = [];
+  const unresolved = { prefix: null, build: null, reason: { code: '~3~1', file: '/some/compatdata/990080' } };
+  const result = routeGate({ ...A1_PAIR, proton: unresolved, gameDir, exePath, log: (e) => events.push(e) });
+  assert.equal(result, null, 'an unresolved context carries on placing files rather than refusing');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].code, 'linux-proton-unresolved');
+  assert.equal(events[0].params.reason, '~3~1');
+});
+
+test('a resolved context emits no job event', (t) => {
+  const { gameDir, exePath } = gameFixture(t);
+  const events = [];
+  const result = routeGate({ ...A1_PAIR, proton: PROTON, gameDir, exePath, log: (e) => events.push(e) });
+  assert.equal(result, null);
+  assert.deepEqual(events, []);
+});

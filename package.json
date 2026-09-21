@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test --test-concurrency=1 test/*.test.js",
+    "test:linux": "node scripts/test-linux.js",
     "test:ui": "electron scripts/test-game-filters-ui.js",
     "test:payload": "node scripts/test-feeder-payload.js",
     "test:optiscaler": "node scripts/test-optiscaler-payload.js",

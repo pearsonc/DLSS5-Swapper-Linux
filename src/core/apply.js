@@ -14,6 +14,7 @@ const feederConfig = require('./feeder-config');
 const vulkanLayer = require('./vulkan-layer');
 const journal = require('./file-journal');
 const compatibility = require('./compatibility');
+const linux = require('../linux');
 const crypto = require('crypto');
 
 const BACKUP_DIR = '_DLSS5_Backup';
@@ -142,12 +143,13 @@ function canWrite(dir) {
 
 async function copyOver(src, dest) {
   await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+  const existing = await fs.promises.stat(dest).then(s => s.mode, () => undefined);
   await fs.promises.copyFile(src, dest);
   // Windows carries the source's read-only attribute across a copy, and the
   // payload inside an installed app is read-only. A read-only ReShade.ini is
   // exactly what "Unable to save configuration" on the game's screen means,
   // and a read-only DLL makes the next install or restore fail on overwrite.
-  try { await fs.promises.chmod(dest, 0o666); } catch { /* the copy is what matters */ }
+  try { await fs.promises.chmod(dest, linux.fileMode(existing)); } catch { /* the copy is what matters */ }
 }
 
 function runSetup(setupExe, args, log) {
@@ -219,6 +221,7 @@ function rememberMissingParents(manifest, gameDir, target) {
 }
 
 async function trackBeforeWrite(manifest, gameDir, target, meta = {}) {
+  target = path.join(path.dirname(target), linux.caseAwareTarget(path.dirname(target), path.basename(target)));
   const rel = path.relative(gameDir, target);
   journal.safePath(gameDir, rel);
   if (rel.split(path.sep)[0].toLowerCase() === BACKUP_DIR.toLowerCase()) throw fail('errUnsafeTarget', { rel });
@@ -242,6 +245,7 @@ async function trackBeforeWrite(manifest, gameDir, target, meta = {}) {
 }
 
 async function copyTracked(manifest, gameDir, src, dest, meta = {}) {
+  dest = path.join(path.dirname(dest), linux.caseAwareTarget(path.dirname(dest), path.basename(dest)));
   const rel = await trackBeforeWrite(manifest, gameDir, dest, meta);
   await saveActiveManifest(gameDir, manifest);
   await copyOver(src, dest);
@@ -249,12 +253,13 @@ async function copyTracked(manifest, gameDir, src, dest, meta = {}) {
 }
 
 async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
+  dest = path.join(path.dirname(dest), linux.caseAwareTarget(path.dirname(dest), path.basename(dest)));
   const rel = await trackBeforeWrite(manifest, gameDir, dest, meta);
   await saveActiveManifest(gameDir, manifest);
   await fs.promises.mkdir(path.dirname(dest), { recursive: true });
   // A file an earlier install copied in can be read-only, and Windows refuses
   // to rewrite it: clear the attribute before, not only after.
-  try { await fs.promises.chmod(dest, 0o666); } catch { /* absent is normal */ }
+  try { await fs.promises.chmod(dest, linux.fileMode(await fs.promises.stat(dest).then(s => s.mode, () => undefined))); } catch { /* absent is normal */ }
   await fs.promises.writeFile(dest, text, 'utf8');
   return rel;
 }
@@ -343,7 +348,7 @@ async function installReShadeAt(options) {
   } = options;
   const exeDir = path.dirname(exePath);
   const hook = hookForApi(api);
-  const hookPath = path.join(exeDir, hook);
+  const hookPath = path.join(exeDir, linux.caseAwareTarget(exeDir, hook));
 
   // Use the already bundled, architecture-checked Addon build directly. A
   // headless setup against host64 can choose/leave the wrong proxy.
@@ -956,7 +961,7 @@ async function restore(gameDir, onLog) {
   const manifestPath = path.join(backupRoot(gameDir), MANIFEST);
   if (!fs.existsSync(manifestPath)) throw fail('errNoBackup');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  await restoreFiles(gameDir, manifest, onLog);
+  await linux.restoreSweep(restoreFiles, gameDir, manifest, onLog);
 
   if (manifest.vulkanLayer) {
     const removed = await vulkanLayer.detach(manifest.vulkanLayer, gameDir);

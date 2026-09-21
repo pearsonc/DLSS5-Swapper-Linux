@@ -10,6 +10,7 @@ const emulators = require('./emulators');
 const crypto = require('crypto');
 const feederRelease = require('./feeder-release');
 const { safePath } = require('./file-journal');
+const linux = require('../linux');
 
 const SKIP_DIRS = new Set([
   '_dlss5_backup', 'reshade-shaders', 'host64', 'node_modules', '.git',
@@ -83,7 +84,7 @@ function inspectReShade(exeDir) {
   } catch {}
 
   for (const name of names) {
-    const file = path.join(exeDir, name);
+    const file = path.join(exeDir, linux.caseAwareTarget(exeDir, name));
     if (!fs.existsSync(file)) continue;
     if (pe.versionMentions(file, 'ReShade')) {
       return {

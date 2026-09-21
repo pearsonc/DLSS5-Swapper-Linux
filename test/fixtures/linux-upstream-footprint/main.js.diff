@@ -1,0 +1,41 @@
+diff --git a/main.js b/main.js
+--- a/main.js
++++ b/main.js
+@@ -44,0 +45 @@ const { AdminVault } = require('./src/admin-vault');
++const linux = require('./src/linux');
+@@ -1632 +1633,4 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-  if (!scan.chosen) return { ok: false, message: 'No game executable found' };
++  if (!scan.chosen) {
++    const refused = linux.routeGate({ gameDir: dir, scan, log: (e) => event.sender.send('job', e) }); if (refused) return refused;
++    return { ok: false, message: 'No game executable found' };
++  }
+@@ -1657,8 +1661 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-  const proton = contextForSteamGame(protonGame);
+-  if (process.platform === 'linux' && !proton) {
+-    return { ok: false, code: 'errProtonRequired', message: 'This installer supports Windows games launched through Steam Proton. Launch the game once with Proton, then try again.' };
+-  }
+-  if (process.platform === 'linux' && api === 'vulkan') {
+-    return { ok: false, code: 'errLinuxVulkanUnsupported', message: 'The Vulkan Feeder route needs a host Vulkan layer and is not supported on Linux yet. Select a DirectX renderer in the game.' };
+-  }
+-
++  const proton = linux.protonContext(contextForSteamGame, protonGame);
+@@ -1666 +1663,3 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-  await guards.assertGameClosed(dir, target.path);
++  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton, scan, log: send }); if (refused) return refused;
++
++  await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
+@@ -1704 +1703 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-      detail: [gpu ? gpu.map(g => `${g.name} — ${g.driver}`).join('\n') : featureText('errOptiHardware'),
++      detail: [gpu ? gpu.map(g => `${g.name} — ${[g.driver, g.note].filter(Boolean).join(', ')}`).join('\n') : featureText('errOptiHardware'),
+@@ -1718,2 +1717 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-    const release = optiscaler.releaseFor(wanted);
+-    try { optiRoot = await optiscaler.ensureOptiScaler(app.getPath('userData'), release.version); }
++    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), process.platform === 'linux' ? route : release, undefined, undefined, send); }
+@@ -1756,0 +1755 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
++  const compilerRefusal = await linux.compilerCheck(p.source.dir); if (compilerRefusal) return compilerRefusal;
+@@ -1812 +1811 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
+-    await guards.assertGameClosed(dir, target.path);
++    await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
+@@ -1881 +1880 @@ ipcMain.handle('restore', (event, dir) => exclusiveMutation(async () => {
+-    await guards.assertGameClosed(dir, exe);
++    await guards.assertGameClosed(dir, exe, undefined, undefined, send);

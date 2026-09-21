@@ -8,6 +8,7 @@ const core = require('./apply');
 const ini = require('./feeder-config');
 const optiscaler = require('./optiscaler');
 const compatibility = require('./compatibility');
+const linux = require('../linux');
 
 function readManifest(gameDir) {
   const file = path.join(core.backupRoot(gameDir), 'manifest.json');
@@ -127,7 +128,29 @@ async function install(config, log = () => {}) {
       }
     }
     let manifest;
-    if (config.route === 'optiscaler') manifest = await optiscaler.install({ ...config, profile }, log);
+    if (config.route === 'optiscaler') {
+      // On Linux the copy step needs what upstream's own passthrough never
+      // carried: the entry selected by route, a manifest begun the same way
+      // upstream begins one, the release directory the compiler check named,
+      // the barrel's own running-game guard bound with this job's log, and
+      // upstream's journal-captured tracked copy so every placement is
+      // written, backed up and recorded (proton-install-core~28~9's Linux
+      // entry install row). Off Linux none of this is added: the hook stays
+      // a byte-identical passthrough to upstream's own call
+      // (proton-install-core~31~6).
+      const linuxExtras = process.platform === 'linux' ? {
+        entry: require('../linux/entries').entryFor(config.route),
+        manifest: (() => {
+          const begun = core.beginManifest(config.gameDir, config.exePath, config.api);
+          begun.route = config.route;
+          return begun;
+        })(),
+        releaseDir: config.source && config.source.dir,
+        guard: () => linux.assertGameClosed(() => [], config.gameDir, config.exePath, undefined, undefined, log),
+        placeTracked: core.copyTracked
+      } : {};
+      manifest = await linux.installEntry({ ...config, profile, ensuredRoot: config.optiRoot, log, ...linuxExtras });
+    }
     else manifest = await core.applySwap(config, log);
     for (const companion of config.route === 'native' ? (config.companions || []) : []) {
       const dest = path.join(path.dirname(config.exePath), path.basename(companion));

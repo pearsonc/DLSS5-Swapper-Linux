@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const linux = require('../linux');
 function run(file, args) {
   return new Promise((resolve, reject) => execFile(file, args, { windowsHide: true, timeout: 20000, maxBuffer: 4 * 1024 * 1024 },
     (error, stdout) => error ? reject(error) : resolve(stdout)));
@@ -36,26 +37,8 @@ function executableLocked(exePath) {
   }
 }
 
-async function assertGameClosed(gameDir, exePath, runner = run, locked = executableLocked) {
-  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
-  let data;
-  try {
-    const output = await runner(powershell, ['-NoProfile', '-NonInteractive', '-Command',
-      "$ErrorActionPreference='Stop'; @(Get-CimInstance Win32_Process | Select-Object ProcessId,Name,ExecutablePath) | ConvertTo-Json -Compress"]);
-    data = JSON.parse(output || '[]');
-  } catch {
-    // The process list is unavailable: PowerShell restricted by policy, a cold
-    // WMI call past its timeout, or a machine where it simply fails. This used
-    // to refuse the install outright, which is a diagnostic becoming a wall -
-    // people with a closed game could not install at all. Fall back to asking
-    // the executable itself.
-    if (exePath && locked(exePath)) {
-      throw Object.assign(new Error('Close the game first: its executable is in use.'), { code: 'errGameRunning' });
-    }
-    return;
-  }
-  const matches = matchingProcesses(Array.isArray(data) ? data : [data], gameDir, exePath);
-  if (matches.length) throw Object.assign(new Error(`Close the game and helper first: ${matches.map(p => p.Name).join(', ')}`), { code: 'errGameRunning' });
+async function assertGameClosed(gameDir, exePath, runner = run, locked = executableLocked, log, processRoot) {
+  return linux.assertGameClosed(matchingProcesses, gameDir, exePath, runner, locked, log, processRoot);
 }
 // Two separate questions, because only one of them is a hard requirement.
 // The card is: DLSS-NR runs on the RTX 50 path. The driver is not: the model
@@ -88,11 +71,7 @@ function driverSupported(rows) { return rows.some(row => blackwell(row) && drive
 function gpuSupported(rows) { return gpuModelSupported(rows) && driverSupported(rows); }
 async function gpuInfo(runner = run) {
   try {
-    const output = await runner('nvidia-smi.exe', ['--query-gpu=name,driver_version', '--format=csv,noheader']);
-    return output.trim().split(/\r?\n/).filter(Boolean).map(line => {
-      const [name, driver] = line.split(',').map(s => s.trim());
-      return { name, driver };
-    });
+    return await linux.gpuInfo(runner);
   } catch { return null; }
 }
 function antiCheatPresent(gameDir) {

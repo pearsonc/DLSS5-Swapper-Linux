@@ -1,0 +1,25 @@
+diff --git a/src/core/apply.js b/src/core/apply.js
+--- a/src/core/apply.js
++++ b/src/core/apply.js
+@@ -16,0 +17 @@ const compatibility = require('./compatibility');
++const linux = require('../linux');
+@@ -144,0 +146 @@ async function copyOver(src, dest) {
++  const existing = await fs.promises.stat(dest).then(s => s.mode, () => undefined);
+@@ -150 +152 @@ async function copyOver(src, dest) {
+-  try { await fs.promises.chmod(dest, 0o666); } catch { /* the copy is what matters */ }
++  try { await fs.promises.chmod(dest, linux.fileMode(existing)); } catch { /* the copy is what matters */ }
+@@ -221,0 +224 @@ async function trackBeforeWrite(manifest, gameDir, target, meta = {}) {
++  target = path.join(path.dirname(target), linux.caseAwareTarget(path.dirname(target), path.basename(target)));
+@@ -244,0 +248 @@ async function copyTracked(manifest, gameDir, src, dest, meta = {}) {
++  dest = path.join(path.dirname(dest), linux.caseAwareTarget(path.dirname(dest), path.basename(dest)));
+@@ -251,0 +256 @@ async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
++  dest = path.join(path.dirname(dest), linux.caseAwareTarget(path.dirname(dest), path.basename(dest)));
+@@ -257 +262 @@ async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
+-  try { await fs.promises.chmod(dest, 0o666); } catch { /* absent is normal */ }
++  try { await fs.promises.chmod(dest, linux.fileMode(await fs.promises.stat(dest).then(s => s.mode, () => undefined))); } catch { /* absent is normal */ }
+@@ -346 +351 @@ async function installReShadeAt(options) {
+-  const hookPath = path.join(exeDir, hook);
++  const hookPath = path.join(exeDir, linux.caseAwareTarget(exeDir, hook));
+@@ -959 +964 @@ async function restore(gameDir, onLog) {
+-  await restoreFiles(gameDir, manifest, onLog);
++  await linux.restoreSweep(restoreFiles, gameDir, manifest, onLog);

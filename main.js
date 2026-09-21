@@ -42,6 +42,7 @@ const { HistoryStore, knownFolders, fromManifests } = require('./src/core/histor
 const gameMenu = require('./src/core/game-menu');
 const { CommunityClient, ADMIN_TOKEN_PATTERN } = require('./src/community-client');
 const { AdminVault } = require('./src/admin-vault');
+const linux = require('./src/linux');
 let historyStore;
 const history = () => historyStore || (historyStore = new HistoryStore(path.join(app.getPath('userData'), 'history.jsonl')));
 let communityClient;
@@ -1629,7 +1630,10 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   const p = payload();
   if (!p) return { ok: false, ...payloadMissing() };
   const scan = await scanGame(dir);
-  if (!scan.chosen) return { ok: false, message: 'No game executable found' };
+  if (!scan.chosen) {
+    const refused = linux.routeGate({ gameDir: dir, scan, log: (e) => event.sender.send('job', e) }); if (refused) return refused;
+    return { ok: false, message: 'No game executable found' };
+  }
 
   // Honour the sheet's choice, but only if it is one of the candidates we
   // actually found - never patch a path the renderer made up.
@@ -1654,16 +1658,11 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   const protonGame = process.platform === 'linux'
     ? steam().find((game) => path.resolve(game.dir) === path.resolve(dir))
     : null;
-  const proton = contextForSteamGame(protonGame);
-  if (process.platform === 'linux' && !proton) {
-    return { ok: false, code: 'errProtonRequired', message: 'This installer supports Windows games launched through Steam Proton. Launch the game once with Proton, then try again.' };
-  }
-  if (process.platform === 'linux' && api === 'vulkan') {
-    return { ok: false, code: 'errLinuxVulkanUnsupported', message: 'The Vulkan Feeder route needs a host Vulkan layer and is not supported on Linux yet. Select a DirectX renderer in the game.' };
-  }
-
+  const proton = linux.protonContext(contextForSteamGame, protonGame);
   const send = (e) => event.sender.send('job', e);
-  await guards.assertGameClosed(dir, target.path);
+  const refused = linux.routeGate({ route, api, apiLabel: target.apiLabel, bitness: target.bitness, emulator: target.emulator, nativeDlss: target.hasNativeDlss, gameDir: dir, exePath: target.path, proton, scan, log: send }); if (refused) return refused;
+
+  await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
   if (fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errBackendRecovery' };
   const old = backends.readManifest(dir);
   const changed = old && (old.route !== route || old.game.api !== api || old.game.exe.toLowerCase() !== target.rel.toLowerCase());
@@ -1701,7 +1700,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
     const confirmation = await dialog.showMessageBox(win, {
       type: 'warning', title: 'OptiScaler DLSS-NR',
       message: featureText('optiConfirm'),
-      detail: [gpu ? gpu.map(g => `${g.name} — ${g.driver}`).join('\n') : featureText('errOptiHardware'),
+      detail: [gpu ? gpu.map(g => `${g.name} — ${[g.driver, g.note].filter(Boolean).join(', ')}`).join('\n') : featureText('errOptiHardware'),
         oldCard ? featureText('optiCardOld') : null,
         oldDriver ? featureText('optiDriverOld') : null,
         featureText('optiHint'), featureText('optiBridgeHint'), featureText('backendHint')].filter(Boolean).join('\n\n'),
@@ -1715,8 +1714,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
     // 0.1.1.5 and crashes on 0.2.0-patch1, and until now the only way back was
     // to keep an old copy of the whole app.
     const wanted = (loadState().optiscalerVersion || {})[path.resolve(dir).toLowerCase()];
-    const release = optiscaler.releaseFor(wanted);
-    try { optiRoot = await optiscaler.ensureOptiScaler(app.getPath('userData'), release.version); }
+    const release = optiscaler.releaseFor(wanted); try { optiRoot = await linux.ensureEntry(app.getPath('userData'), process.platform === 'linux' ? route : release, undefined, undefined, send); }
     catch (err) { return { ok: false, code: componentCode(err, 'errOptiDownload'), message: err.message }; }
     send({ code: 'optiVerified', params: { version: release.version } });
   }
@@ -1754,6 +1752,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
       }
     }
   }
+  const compilerRefusal = await linux.compilerCheck(p.source.dir); if (compilerRefusal) return compilerRefusal;
 
   if (route === 'feeder') {
     try {
@@ -1809,7 +1808,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 
   try {
     // A game could have been launched while the component download ran.
-    await guards.assertGameClosed(dir, target.path);
+    await guards.assertGameClosed(dir, target.path, undefined, undefined, send);
     // Preserve the previous snapshot before a repeat install changes it.
     history().list([{ dir, name: gameName(dir) }], error => send({ code: 'historySaveWarning', params: { error: error.message } }));
     const manifest = await backends.install({
@@ -1878,7 +1877,7 @@ ipcMain.handle('restore', (event, dir) => exclusiveMutation(async () => {
     // A missing/updated/unrecognised executable must not strand our hooks.
     if (!old && !fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errNoBackup' };
     const exe = old ? journal.safePath(dir, old.game.exe) : null;
-    await guards.assertGameClosed(dir, exe);
+    await guards.assertGameClosed(dir, exe, undefined, undefined, send);
     history().list([{ dir, name: gameName(dir) }], error => send({ code: 'historySaveWarning', params: { error: error.message } }));
     if (!await backends.restore(dir, send)) return { ok: false, code: 'errNoBackup' };
     saveOperation(dir, restoredManifest || {}, restoredManifest ? 'restore' : 'recovery', send);

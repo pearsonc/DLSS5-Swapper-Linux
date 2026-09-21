@@ -1,0 +1,8 @@
+diff --git a/src/core/scan.js b/src/core/scan.js
+--- a/src/core/scan.js
++++ b/src/core/scan.js
+@@ -12,0 +13 @@ const { safePath } = require('./file-journal');
++const linux = require('../linux');
+@@ -86 +87 @@ function inspectReShade(exeDir) {
+-    const file = path.join(exeDir, name);
++    const file = path.join(exeDir, linux.caseAwareTarget(exeDir, name));

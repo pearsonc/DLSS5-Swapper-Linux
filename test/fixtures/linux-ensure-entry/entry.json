@@ -1,0 +1,139 @@
+{
+  "entry": {
+    "id": "A1",
+    "route": "optiscaler",
+    "archive": "archive-control.7z",
+    "sha256": "11f267f2f3957b71c2c71664ce6841bcf2ddb6e19d30fc14b8b0ddcbbec919bb",
+    "bytes": 761,
+    "url": "https://example.invalid/fixtures/archive-control.7z",
+    "placement": [
+      {
+        "member": "OptiScaler.dll",
+        "placedAs": "dxgi.dll",
+        "sha256": "bf210e6fa7e4bd461162e09554a515c4baeac5f3753a0c6960999fc7a3622151",
+        "bytes": 35,
+        "source": "archive"
+      },
+      {
+        "member": "nvngx.dll_dlssnr.dll",
+        "placedAs": "nvngx.dll_dlssnr.dll",
+        "sha256": "ab5a372ad4d6510f8cd0bb7097d346391d0ed4dca6f9009763b3f3e933411012",
+        "bytes": 41,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/amd_fidelityfx_framegeneration_dx12.dll",
+        "placedAs": "OptiScaler/amd_fidelityfx_framegeneration_dx12.dll",
+        "sha256": "8a775f244a66615f7be90f4358410fdb6fc97883afc7d3803ef3f073cf5ffb02",
+        "bytes": 71,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/amd_fidelityfx_loader_dx12.dll",
+        "placedAs": "OptiScaler/amd_fidelityfx_loader_dx12.dll",
+        "sha256": "3451cca3f92d86f252e6547348a62281d7fe56b2ca544d3655f599006a7d95fa",
+        "bytes": 62,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/amd_fidelityfx_upscaler_dx12.dll",
+        "placedAs": "OptiScaler/amd_fidelityfx_upscaler_dx12.dll",
+        "sha256": "174a8d75b4ddba3bf1234c5810f00950540521ea857121a58254c8c8a50d409f",
+        "bytes": 64,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/amd_fidelityfx_vk.dll",
+        "placedAs": "OptiScaler/amd_fidelityfx_vk.dll",
+        "sha256": "e9d273d85f909ac4b937962d9be33a37ff6f6af6ac326aa772f7f9348601ab97",
+        "bytes": 53,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/libxess.dll",
+        "placedAs": "OptiScaler/libxess.dll",
+        "sha256": "d2422dcedacabb3238c3fe53e6017b13fcc894c703c661d4449163f86465f2f0",
+        "bytes": 43,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/libxess_dx11.dll",
+        "placedAs": "OptiScaler/libxess_dx11.dll",
+        "sha256": "2dfbcfb37f5a3822da9fd66426c3707c47af782395f4549a7186eda31817c93d",
+        "bytes": 48,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/libxess_fg.dll",
+        "placedAs": "OptiScaler/libxess_fg.dll",
+        "sha256": "28849964648aa8abe949e6e02b65287cd225aeefea3749442cb27ef97a19bb52",
+        "bytes": 46,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler/libxell.dll",
+        "placedAs": "OptiScaler/libxell.dll",
+        "sha256": "c7217b511367f0ea04547ccce904019a5fc762d9ae84c9079863487d04be3b78",
+        "bytes": 43,
+        "source": "archive"
+      },
+      {
+        "member": "Licenses/DirectX_LICENSE.txt",
+        "placedAs": "Licenses/DirectX_LICENSE.txt",
+        "sha256": "2c6c2f92114c7142c319be4f0817b395f63eecb037b70c4225490efa2106a0c9",
+        "bytes": 49,
+        "source": "archive"
+      },
+      {
+        "member": "Licenses/FidelityFX_v2_LICENSE.md",
+        "placedAs": "Licenses/FidelityFX_v2_LICENSE.md",
+        "sha256": "e0be9aef627b02db91fda473bd3871356f979083efb6b2eef2a12ceac33f2a8d",
+        "bytes": 54,
+        "source": "archive"
+      },
+      {
+        "member": "Licenses/RenoDX_ATTRIBUTION.txt",
+        "placedAs": "Licenses/RenoDX_ATTRIBUTION.txt",
+        "sha256": "f94bc924d37245786f8165d16ec91a29935ba70b1c6c1f3d78855c577d12417f",
+        "bytes": 52,
+        "source": "archive"
+      },
+      {
+        "member": "Licenses/XeSS_LICENSE.txt",
+        "placedAs": "Licenses/XeSS_LICENSE.txt",
+        "sha256": "5c069043530c3e2a60b2bc037e9f5f8c976690afc66de04f2b077f326f6678a1",
+        "bytes": 46,
+        "source": "archive"
+      },
+      {
+        "member": "OptiScaler.ini",
+        "placedAs": "OptiScaler.ini",
+        "sha256": "95f7abdceac265043ec9a7c2c7e0cdd1a176dabac5ac13428f43f7c6c6e9ddb7",
+        "bytes": 35,
+        "source": "archive"
+      },
+      {
+        "member": "LICENSE.GPL-3.0.txt",
+        "placedAs": "OptiScaler/licenses/LICENSE.GPL-3.0.txt",
+        "sha256": "75257e0965c40b2541bde9cba456334572df25019338085af764c3c56e76bb20",
+        "bytes": 40,
+        "source": "https://example.invalid/fixtures/LICENSE.GPL-3.0.txt"
+      }
+    ],
+    "notExtracted": [
+      "OptiScaler/D3D12_OptiScaler/D3D12Core.dll"
+    ]
+  },
+  "missingMemberArchive": {
+    "sha256": "f1315ebb6235fdb287d5d25ac3a31333f0451cc465a9ebcbc9b5323b96f56d3c",
+    "bytes": 700
+  },
+  "symlinkMemberArchive": {
+    "sha256": "9586a2e0d5792485685d3f6c5387a81b48c55400384f8aeaeeb57bff46875a5d",
+    "bytes": 723
+  },
+  "licenceWrong": {
+    "sha256": "530da7691197dbdadcd88dac3f76835ddb18669fc81ae0c1ee1dbd06cf651ddb",
+    "bytes": 34
+  }
+}
