@@ -10,7 +10,7 @@ const { entries } = require('./entries');
 // site, main.js:1752, hands this hook one argument only. For every
 // placement row the entry sources from that release, rather than from its
 // own archive, the file must already sit under `releaseDir` by the row's
-// member name: proton-install-core~17~1 refuses before any file is written,
+// member name: proton-install-core~17~2 refuses before any file is written,
 // naming the file that is missing.
 function compilerCheck(releaseDir, entry = entries[0]) {
   if (process.platform !== 'linux') return null;

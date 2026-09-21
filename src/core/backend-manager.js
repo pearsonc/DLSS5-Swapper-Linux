@@ -134,7 +134,7 @@ async function install(config, log = () => {}) {
       // upstream begins one, the release directory the compiler check named,
       // the barrel's own running-game guard bound with this job's log, and
       // upstream's journal-captured tracked copy so every placement is
-      // written, backed up and recorded (proton-install-core~28~8's Linux
+      // written, backed up and recorded (proton-install-core~28~9's Linux
       // entry install row). Off Linux none of this is added: the hook stays
       // a byte-identical passthrough to upstream's own call
       // (proton-install-core~31~6).
