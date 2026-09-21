@@ -17,15 +17,17 @@ test('gpuInfo on Linux reads the name and driver version from nvidia-smi through
   assert.equal(rows.length, 2);
   assert.equal(rows[0].name, 'NVIDIA GeForce RTX 5090');
   assert.equal(rows[1].name, 'NVIDIA GeForce RTX 4090');
+  assert.equal(rows[0].driver, '616.56', 'the driver field keeps what nvidia-smi printed, unchanged, so install-guards.js:56 still parses a version out of it');
+  assert.equal(rows[1].driver, '616.92');
 });
 
-test('gpuInfo on Linux gates no install on the driver version and shows wording that it cannot judge one', async () => {
+test('gpuInfo on Linux gates no install on the driver version and shows wording that it cannot judge one, in its own field', async () => {
   const runner = async () => 'NVIDIA GeForce RTX 5090, 616.56\n';
   // [test->proton-install-core~26~1]
   const rows = await gpuInfo(runner);
   assert.equal(rows.length, 1);
-  assert.notEqual(rows[0].driver, '616.56', 'the raw driver version is not carried forward as a value to gate on');
-  assert.match(rows[0].driver, /cannot judge a Linux driver version/);
+  assert.equal(rows[0].driver, '616.56', 'the wording travels in its own field, never displacing the parsed driver version (code-quality MEDIUM gpu-info.js:19, conformance MEDIUM the driver dialog contradicts ~26~1\'s wording)');
+  assert.match(rows[0].note, /cannot judge a Linux driver version/);
 });
 
 test('gpuInfo on Linux reads the GPU as unknown and lets the install carry on when nvidia-smi is absent or fails', async () => {
