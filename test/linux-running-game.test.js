@@ -9,7 +9,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { assertGameClosed } = require('../src/linux/running-game');
+const runningGame = require('../src/linux/running-game');
+const { assertGameClosed } = runningGame;
 
 Object.defineProperty(process, 'platform', { value: 'linux' });
 
@@ -42,7 +43,7 @@ function makeProcess(root, pid, { status = 'Uid:\t1000\t1000\t1000\t1000\n', exe
 
 async function outcome(work) {
   try { await work(); return { admitted: true }; }
-  catch (error) { return { admitted: false, code: error.code, path: error.path, pid: error.pid }; }
+  catch (error) { return { admitted: false, code: error.code, path: error.path, pid: error.pid, message: error.message }; }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,3 +220,188 @@ test('an empty process root, existing but listing no readable digit entry, refus
 // identity comparison closes the mapped-file half; no fixture here can
 // construct a second mount namespace, so the hazard table carries it rather
 // than a test.
+
+// ---------------------------------------------------------------------------
+// Review remedy 3-3, 4-7, 7-2: when no resolvePrefix is handed in, the
+// delegate resolves the prefix itself from the game folder through
+// proton-context.js's protonContext with upstream's contextForSteamGame.
+
+// [test->proton-install-core~14~6]
+test('resolvePrefixFromGameFolder finds the game by folder through the injected steam() and resolves its prefix through protonContext', (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const fixtureGame = { id: '990080', dir: gameDir, steamRoot: '/fixture/steam' };
+  const fixturePrefix = '/fixture/steam/steamapps/compatdata/990080/pfx';
+  const calls = [];
+  const deps = {
+    steam: () => [{ id: '1', dir: '/elsewhere' }, fixtureGame],
+    protonContext: (contextForSteamGame, game, steamRoots) => {
+      calls.push({ contextForSteamGame, game, steamRoots });
+      return game === fixtureGame ? { prefix: fixturePrefix, build: null, reason: null } : { prefix: null, build: null, reason: null };
+    },
+    contextForSteamGame: () => null
+  };
+  const resolved = runningGame.resolvePrefixFromGameFolder(gameDir, deps);
+  assert.equal(resolved, fixturePrefix);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].game, fixtureGame);
+  assert.equal(calls[0].contextForSteamGame, deps.contextForSteamGame);
+});
+
+// [test->proton-install-core~14~6]
+test('resolvePrefixFromGameFolder returns null where steam() lists no matching game, or the context has no prefix', (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  assert.equal(runningGame.resolvePrefixFromGameFolder(gameDir, { steam: () => [], protonContext: () => ({ prefix: null }), contextForSteamGame: () => null }), null);
+  const fixtureGame = { id: '2', dir: gameDir, steamRoot: '/fixture' };
+  assert.equal(runningGame.resolvePrefixFromGameFolder(gameDir, { steam: () => [fixtureGame], protonContext: () => ({ prefix: null, reason: { code: 'not-listed' } }), contextForSteamGame: () => null }), null);
+  assert.equal(runningGame.resolvePrefixFromGameFolder(gameDir, { steam: () => { throw new Error('unreadable'); }, protonContext: () => ({ prefix: '/x' }), contextForSteamGame: () => null }), null);
+});
+
+// [test->proton-install-core~14~6]
+test('assertGameClosed, given no resolvePrefix, defaults to resolving the game folder itself', async (t) => {
+  // The translated path is deliberately outside the game folder: the old,
+  // unwired default always refused a drive letter (the no-translation row),
+  // so only a call that actually reaches resolvePrefixFromGameFolder and
+  // translates through it can admit here.
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const elsewhere = tempDir(t, 'swapper-u2-elsewhere-');
+  fs.writeFileSync(path.join(elsewhere, 'Other.exe'), 'binary');
+  const prefix = tempDir(t, 'swapper-u2-prefix-');
+  fs.mkdirSync(path.join(prefix, 'dosdevices'), { recursive: true });
+  fs.symlinkSync(elsewhere, path.join(prefix, 'dosdevices', 's:'));
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8030, { cmdlineArgs: ['S:\\Other.exe'] });
+  let calledWith = null;
+  const original = runningGame.resolvePrefixFromGameFolder;
+  runningGame.resolvePrefixFromGameFolder = (dir) => { calledWith = dir; return prefix; };
+  t.after(() => { runningGame.resolvePrefixFromGameFolder = original; });
+  const events = [];
+  const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, (e) => events.push(e), root));
+  assert.equal(calledWith, gameDir, 'the delegate calls resolvePrefixFromGameFolder itself when no resolvePrefix is given');
+  assert.equal(result.admitted, true);
+  assert.equal(events[0].params.verdict, 'admitted');
+});
+
+// ---------------------------------------------------------------------------
+// Review remedy: Annex C's Command-line row cells the review found untested.
+
+// [test->proton-install-core~14~6]
+test('a drive letter that translates to a path elsewhere is admitted', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const elsewhere = tempDir(t, 'swapper-u2-elsewhere-');
+  fs.writeFileSync(path.join(elsewhere, 'Other.exe'), 'binary');
+  const prefix = tempDir(t, 'swapper-u2-prefix-');
+  fs.mkdirSync(path.join(prefix, 'dosdevices'), { recursive: true });
+  fs.symlinkSync(elsewhere, path.join(prefix, 'dosdevices', 's:'));
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8040, { cmdlineArgs: ['S:\\Other.exe'] });
+  const events = [];
+  const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, (e) => events.push(e), root, () => prefix));
+  assert.equal(result.admitted, true);
+  assert.equal(events[0].params.verdict, 'admitted');
+});
+
+// [test->proton-install-core~14~6]
+test('a drive letter reached through a relative dosdevices link still refuses under the game folder', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  fs.writeFileSync(path.join(gameDir, 'Game.exe'), 'binary');
+  const prefix = tempDir(t, 'swapper-u2-prefix-');
+  fs.mkdirSync(path.join(prefix, 'dosdevices'), { recursive: true });
+  const relativeTarget = path.relative(path.join(prefix, 'dosdevices'), gameDir);
+  fs.symlinkSync(relativeTarget, path.join(prefix, 'dosdevices', 'c:'));
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8041, { cmdlineArgs: ['C:\\Game.exe'] });
+  const events = [];
+  const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, (e) => events.push(e), root, () => prefix));
+  assert.equal(result.admitted, false);
+  assert.equal(events[0].params.verdict, 'refused');
+});
+
+// [test->proton-install-core~14~6]
+test('a live drive letter whose file is absent is logged unjudged and admitted', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const prefix = tempDir(t, 'swapper-u2-prefix-');
+  fs.mkdirSync(path.join(prefix, 'dosdevices'), { recursive: true });
+  fs.symlinkSync(gameDir, path.join(prefix, 'dosdevices', 's:'));
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8042, { cmdlineArgs: ['S:\\gone.exe'] });
+  const events = [];
+  const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, (e) => events.push(e), root, () => prefix));
+  assert.equal(result.admitted, true);
+  assert.equal(events[0].params.verdict, 'unjudged');
+});
+
+// [test->proton-install-core~14~6]
+test('a drive letter under a prefix holding other letters, none of them the one asked for, refuses', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const prefix = tempDir(t, 'swapper-u2-prefix-');
+  fs.mkdirSync(path.join(prefix, 'dosdevices'), { recursive: true });
+  fs.symlinkSync(gameDir, path.join(prefix, 'dosdevices', 'c:'));
+  fs.symlinkSync(gameDir, path.join(prefix, 'dosdevices', 's:'));
+  fs.symlinkSync('/', path.join(prefix, 'dosdevices', 'z:'));
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8043, { cmdlineArgs: ['D:\\x.exe'] });
+  const events = [];
+  const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, (e) => events.push(e), root, () => prefix));
+  assert.equal(result.admitted, false);
+  assert.equal(events[0].params.verdict, 'refused');
+});
+
+// [test->proton-install-core~14~6]
+test('a \\\\?\\ device-path argv[0] is logged unjudged and admitted', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const root = tempDir(t, 'swapper-u2-proc-');
+  makeProcess(root, 8044, { cmdlineArgs: ['\\\\?\\C:\\x.exe'] });
+  const events = [];
+  const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, (e) => events.push(e), root));
+  assert.equal(result.admitted, true);
+  assert.equal(events[0].params.verdict, 'unjudged');
+});
+
+// ---------------------------------------------------------------------------
+// Review remedy 1-4, 5-6: the game-folder walk is bounded and the identity
+// match is a Map keyed major:minor:ino, built once.
+
+// [test->proton-install-core~12~3]
+test('buildFileIndex stops at its bound and reports how many entries it counted', (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  for (let i = 0; i < 6; i++) fs.writeFileSync(path.join(gameDir, `f${i}.bin`), 'x');
+  const bounded = runningGame.buildFileIndex(gameDir, 5);
+  assert.equal(bounded.truncated, true);
+  assert.equal(bounded.count, 5);
+  const unbounded = runningGame.buildFileIndex(gameDir, 100);
+  assert.equal(unbounded.truncated, false);
+  assert.equal(unbounded.count, 6);
+});
+
+// [test->proton-install-core~12~3]
+test('a game folder whose walk truncates past the bound refuses the guarded operation', async (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const root = tempDir(t, 'swapper-u2-proc-');
+  // A harmless, unrelated readable process, so the process-root-empty
+  // refusal (~15~2) cannot be the one firing: only the truncation refusal
+  // can make this outcome false.
+  makeProcess(root, 8050, { exeTarget: '/usr/bin/bash', mapsLines: ['00400000-00401000 r-xp 00000000 00:00 0'] });
+  const original = runningGame.buildFileIndex;
+  runningGame.buildFileIndex = () => ({ byExe: new Map(), byMap: new Map(), truncated: true, count: 100000 });
+  t.after(() => { runningGame.buildFileIndex = original; });
+  const result = await outcome(() => assertGameClosed(null, gameDir, path.join(gameDir, 'Game.exe'), null, null, null, root));
+  assert.equal(result.admitted, false);
+  assert.equal(result.code, 'errGameRunning');
+  assert.match(result.message || '', /100000/);
+});
+
+// [test->proton-install-core~12~3]
+test('buildFileIndex keys byExe by dev:ino and byMap by major:minor:ino, once per file', (t) => {
+  const gameDir = tempDir(t, 'swapper-u2-game-');
+  const proxy = path.join(gameDir, 'dxgi.dll');
+  fs.writeFileSync(proxy, 'proxy bytes');
+  const st = fs.lstatSync(proxy);
+  const index = runningGame.buildFileIndex(gameDir);
+  assert.equal(index.truncated, false);
+  assert.equal(index.byExe.get(`${st.dev}:${st.ino}`), proxy);
+  const found = [...index.byMap.entries()].find(([, p]) => p === proxy);
+  assert.ok(found, 'byMap holds an entry for the file');
+  assert.match(found[0], /^\d+:\d+:\d+$/);
+  assert.equal(index.byExe.size, 1);
+  assert.equal(index.byMap.size, 1);
+});
