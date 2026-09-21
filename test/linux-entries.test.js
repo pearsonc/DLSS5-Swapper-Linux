@@ -35,7 +35,7 @@ test('the generator re-emits src/linux/entries.js byte-identically from the spec
   assert.equal(regenerated, committed);
 });
 
-// [test->proton-install-core~28~7]
+// [test->proton-install-core~28~8]
 test('entries.js\'s source_sha256 equals the generated criteria file\'s, so a spec change fails this until the module is regenerated', () => {
   const entriesText = fs.readFileSync(path.join(root, 'src/linux/entries.js'), 'utf8');
   const entriesSha = /source_sha256: ([0-9a-f]{64})/.exec(entriesText)[1];
